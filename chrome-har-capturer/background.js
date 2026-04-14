@@ -1,9 +1,32 @@
-// Background script for HAR Traffic Capturer
-// Captures network requests and stores them for HAR export
+// Background script for HAR Traffic Capturer with Filtering
+// Captures network requests and stores them for HAR export with filtering support
 
 let isCapturing = false;
 let capturedEntries = [];
 let startTime = null;
+
+// Filter settings
+let filterSettings = {
+  enabled: false,
+  urlPattern: '',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  statusCodes: [],
+  excludeResources: true, // Exclude images, CSS, JS by default
+  captureApiOnly: false
+};
+
+// Common API indicators
+const API_INDICATORS = ['/api/', '/v1/', '/v2/', '/graphql', '/rest/', '/service/', '/endpoint/'];
+
+// Resource types to exclude when excludeResources is enabled
+const RESOURCE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.ico', '.mp4', '.webm', '.mp3'];
+
+// Load filter settings from storage
+chrome.storage.local.get(['filterSettings'], (result) => {
+  if (result.filterSettings) {
+    filterSettings = { ...filterSettings, ...result.filterSettings };
+  }
+});
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -18,9 +41,81 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'clearCapture') {
     capturedEntries = [];
     sendResponse({ status: 'cleared' });
+  } else if (request.action === 'updateFilters') {
+    filterSettings = { ...filterSettings, ...request.filters };
+    chrome.storage.local.set({ filterSettings });
+    sendResponse({ status: 'filters updated', filters: filterSettings });
+  } else if (request.action === 'getFilters') {
+    sendResponse({ filters: filterSettings });
+  } else if (request.action === 'exportHAR') {
+    exportHAR();
+    sendResponse({ status: 'exported' });
   }
   return true;
 });
+
+// Check if URL matches filter criteria
+function shouldCaptureRequest(url, method) {
+  // If filters are disabled, capture everything
+  if (!filterSettings.enabled) {
+    return !shouldExcludeResource(url);
+  }
+
+  // Check URL pattern
+  if (filterSettings.urlPattern) {
+    try {
+      const regex = new RegExp(filterSettings.urlPattern, 'i');
+      if (!regex.test(url)) {
+        return false;
+      }
+    } catch (e) {
+      // If invalid regex, do simple string matching
+      if (!url.toLowerCase().includes(filterSettings.urlPattern.toLowerCase())) {
+        return false;
+      }
+    }
+  }
+
+  // Check HTTP method
+  if (filterSettings.methods && filterSettings.methods.length > 0) {
+    if (!filterSettings.methods.includes(method)) {
+      return false;
+    }
+  }
+
+  // Check if API-only mode is enabled
+  if (filterSettings.captureApiOnly) {
+    const isApiCall = API_INDICATORS.some(indicator => 
+      url.toLowerCase().includes(indicator.toLowerCase())
+    );
+    if (!isApiCall) {
+      return false;
+    }
+  }
+
+  // Exclude resource files if enabled
+  if (filterSettings.excludeResources) {
+    if (shouldExcludeResource(url)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Check if URL is a resource file (images, CSS, JS, etc.)
+function shouldExcludeResource(url) {
+  const lowerUrl = url.toLowerCase();
+  return RESOURCE_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
+}
+
+// Check if response status matches filter
+function shouldIncludeResponse(status) {
+  if (!filterSettings.enabled || !filterSettings.statusCodes || filterSettings.statusCodes.length === 0) {
+    return true;
+  }
+  return filterSettings.statusCodes.includes(status.toString());
+}
 
 // Use chrome.debugger API to capture network traffic
 async function startCapture() {
@@ -75,6 +170,11 @@ async function stopCapture() {
 function handleNetworkEvent(method, params) {
   switch (method) {
     case 'Network.requestWillBeSent':
+      // Check if request matches filters before storing
+      if (!shouldCaptureRequest(params.request.url, params.request.method)) {
+        return;
+      }
+      
       // Store request info
       const entry = {
         requestId: params.requestId,
@@ -86,7 +186,8 @@ function handleNetworkEvent(method, params) {
           postData: params.request.postData
         },
         response: null,
-        time: null
+        time: null,
+        filtered: false
       };
       capturedEntries.push(entry);
       break;
@@ -95,6 +196,12 @@ function handleNetworkEvent(method, params) {
       // Update entry with response info
       const existingEntry = capturedEntries.find(e => e.requestId === params.requestId);
       if (existingEntry) {
+        // Check if response status matches filters
+        if (!shouldIncludeResponse(params.response.status)) {
+          // Mark for filtering but keep for now (will be filtered during export)
+          existingEntry.filtered = true;
+        }
+        
         existingEntry.response = {
           status: params.response.status,
           statusText: params.response.statusText,
@@ -117,6 +224,9 @@ function handleNetworkEvent(method, params) {
 
 // Generate HAR format data
 function generateHAR() {
+  // Filter out entries marked as filtered
+  const entriesToExport = capturedEntries.filter(entry => !entry.filtered);
+  
   const har = {
     log: {
       version: '1.2',
@@ -133,7 +243,7 @@ function generateHAR() {
           onLoad: -1
         }
       }],
-      entries: capturedEntries.map(entry => ({
+      entries: entriesToExport.map(entry => ({
         startedDateTime: entry.startedDateTime,
         time: entry.time || 0,
         request: {
@@ -180,19 +290,22 @@ function generateHAR() {
 }
 
 // Export HAR to file
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'exportHAR') {
-    const har = generateHAR();
-    const harJson = JSON.stringify(har, null, 2);
-    const blob = new Blob([harJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    chrome.downloads.download({
-      url: url,
-      filename: `har-capture-${new Date().toISOString().replace(/[:.]/g, '-')}.har`
-    });
-    
-    sendResponse({ status: 'exported' });
+function exportHAR() {
+  const har = generateHAR();
+  const harJson = JSON.stringify(har, null, 2);
+  const blob = new Blob([harJson], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  // Build filename with filter info
+  let filename = 'har-capture';
+  if (filterSettings.enabled) {
+    if (filterSettings.captureApiOnly) filename += '-api';
+    if (filterSettings.urlPattern) filename += '-filtered';
   }
-  return true;
-});
+  filename += `-${new Date().toISOString().replace(/[:.]/g, '-')}.har`;
+  
+  chrome.downloads.download({
+    url: url,
+    filename: filename
+  });
+}
