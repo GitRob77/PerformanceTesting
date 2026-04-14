@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+    }
+    
+    h1 {
+      font-size: 16px;
+      margin: 0 0 15px 0;
+      color: #333;
+      text-align: center;
+    }
+    
+    .status {
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+      border-left: 4px solid #ccc;
+    }
+    
+    .status.capturing {
+      border-left-color: #e74c3c;
+      background: #ffeaea;
+    }
+    
+    .status.idle {
+      border-left-color: #2ecc71;
+    }
+    
+    .status-text {
+      font-weight: bold;
+      color: #555;
+    }
+    
+    .entry-count {
+      font-size: 12px;
+      color: #777;
+      margin-top: 5px;
+    }
+    
+    button {
+      width: 100%;
+      padding: 12px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background 0.3s;
+    }
+    
+    .btn-start {
+      background: #27ae60;
+      color: white;
+    }
+    
+    .btn-start:hover {
+      background: #229954;
+    }
+    
+    .btn-stop {
+      background: #e74c3c;
+      color: white;
+    }
+    
+    .btn-stop:hover {
+      background: #c0392b;
+    }
+    
+    .btn-export {
+      background: #3498db;
+      color: white;
+    }
+    
+    .btn-export:hover {
+      background: #2980b9;
+    }
+    
+    .btn-clear {
+      background: #95a5a6;
+      color: white;
+    }
+    
+    .btn-clear:hover {
+      background: #7f8c8d;
+    }
+    
+    .info {
+      font-size: 11px;
+      color: #888;
+      margin-top: 15px;
+      text-align: center;
+      line-height: 1.4;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 HAR Traffic Capturer</h1>
+  
+  <div id="status" class="status idle">
+    <div class="status-text" id="statusText">Ready to capture</div>
+    <div class="entry-count" id="entryCount">0 requests captured</div>
+  </div>
+  
+  <button id="btnStart" class="btn-start">▶ Start Capture</button>
+  <button id="btnStop" class="btn-stop hidden">⏹ Stop Capture</button>
+  <button id="btnExport" class="btn-export">💾 Export HAR</button>
+  <button id="btnClear" class="btn-clear">🗑 Clear Data</button>
+  
+  <div class="info">
+    Captures HTTP/HTTPS traffic from the current tab<br>
+    and exports in HAR format for analysis
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
