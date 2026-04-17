@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnStop = document.getElementById('btnStop');
   const btnExport = document.getElementById('btnExport');
   const btnClear = document.getElementById('btnClear');
-  const statusDiv = document.getElementById('status');
+  const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
   const entryCount = document.getElementById('entryCount');
 
@@ -16,8 +16,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Start capture button
   btnStart.addEventListener('click', async () => {
     try {
-      await chrome.runtime.sendMessage({ action: 'startCapture' });
-      updateUI(true);
+      // Find the best tab to capture: prefer the active non-extension tab,
+      // otherwise pick the most recently used non-chrome tab in the window
+      let tabId = null;
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeReal = activeTabs.find(t => t.url && !t.url.startsWith('chrome'));
+      if (activeReal) {
+        tabId = activeReal.id;
+      } else {
+        // Active tab is a chrome/extension page — find the last-accessed real tab
+        const allTabs = await chrome.tabs.query({ currentWindow: true });
+        const realTabs = allTabs.filter(t => t.url && !t.url.startsWith('chrome'));
+        if (realTabs.length > 0) {
+          // Sort by lastAccessed descending (most recent first)
+          realTabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+          tabId = realTabs[0].id;
+        } else {
+          tabId = activeTabs[0]?.id;
+        }
+      }
+      const result = await chrome.runtime.sendMessage({ action: 'startCapture', tabId });
+      if (result && result.status === 'error') {
+        alert('Could not start capture:\n' + result.message);
+      } else {
+        updateUI(true);
+      }
     } catch (error) {
       console.error('Failed to start capture:', error);
       alert('Failed to start capture. Make sure you have the required permissions.');
@@ -35,12 +58,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // View Requests button — opens the viewer in a new tab
+  const btnViewer = document.getElementById('btnViewer');
+  btnViewer.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('viewer.html') });
+  });
+
   // Export HAR button
+  // The service worker cannot use URL.createObjectURL, so we receive the HAR
+  // data here in the popup and trigger the download from this context instead.
   btnExport.addEventListener('click', async () => {
     try {
-      await chrome.runtime.sendMessage({ action: 'exportHAR' });
-      statusText.textContent = 'HAR file downloaded!';
-      setTimeout(() => updateStatus(), 2000);
+      const response = await chrome.runtime.sendMessage({ action: 'exportHAR' });
+      if (response.status === 'ok' && response.har) {
+        const json = JSON.stringify(response.har, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `har-${Date.now()}.har`;
+        a.click();
+        URL.revokeObjectURL(url);
+        statusText.textContent = 'HAR file downloaded!';
+        setTimeout(() => updateStatus(), 2000);
+      }
     } catch (error) {
       console.error('Failed to export HAR:', error);
       alert('Failed to export HAR file.');
@@ -66,15 +107,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isCapturing) {
       btnStart.classList.add('hidden');
       btnStop.classList.remove('hidden');
-      statusDiv.classList.remove('idle');
-      statusDiv.classList.add('capturing');
-      statusText.textContent = '🔴 Capturing traffic...';
+      if (statusDot) { statusDot.classList.add('active'); }
+      statusText.textContent = 'Capturing traffic...';
     } else {
       btnStart.classList.remove('hidden');
       btnStop.classList.add('hidden');
-      statusDiv.classList.remove('capturing');
-      statusDiv.classList.add('idle');
-      statusText.textContent = 'Capture stopped';
+      if (statusDot) { statusDot.classList.remove('active'); }
+      statusText.textContent = 'Ready to capture';
     }
   }
 

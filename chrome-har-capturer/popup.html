@@ -3,127 +3,192 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      width: 300px;
-      padding: 15px;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f5f5f5;
+      width: 280px;
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      background: #f5f6fa;
+      color: #111827;
     }
-    
-    h1 {
+
+    /* ── Header ── */
+    .header {
+      background: #ffffff;
+      border-top: 3px solid #fa4616;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 14px 10px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .brand-text {
       font-size: 16px;
-      margin: 0 0 15px 0;
-      color: #333;
-      text-align: center;
+      font-weight: 800;
+      letter-spacing: -0.3px;
     }
-    
-    .status {
+    .brand-ui   { color: #fa4616; }
+    .brand-path { color: #111827; }
+    .brand-subtitle {
+      font-size: 10px;
+      font-weight: 500;
+      color: #6b7280;
+      margin-top: 1px;
+      display: block;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    /* ── Status card ── */
+    .status-card {
+      margin: 12px 12px 0;
       background: white;
-      padding: 10px;
-      border-radius: 5px;
-      margin-bottom: 15px;
-      border-left: 4px solid #ccc;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    
-    .status.capturing {
-      border-left-color: #e74c3c;
-      background: #ffeaea;
+    .status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: #10b981;
+      flex-shrink: 0;
     }
-    
-    .status.idle {
-      border-left-color: #2ecc71;
+    .status-dot.active { background: #fa4616; animation: pulse 1.2s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
     }
-    
-    .status-text {
-      font-weight: bold;
-      color: #555;
+    .status-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
     }
-    
-    .entry-count {
-      font-size: 12px;
-      color: #777;
-      margin-top: 5px;
+    .status-count {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 1px;
     }
-    
+
+    /* ── Buttons ── */
+    .btn-group {
+      padding: 10px 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
     button {
       width: 100%;
-      padding: 12px;
-      margin: 5px 0;
+      padding: 9px 14px;
       border: none;
-      border-radius: 5px;
+      border-radius: 6px;
       cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: #fa4616;
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) { background: #e03a0e; }
+
+    .btn-danger {
+      background: #fee2e2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+    .btn-danger:hover:not(:disabled) { background: #fecaca; }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+
+    .btn-outline {
+      background: white;
+      color: #fa4616;
+      border: 1.5px solid #fa4616;
+    }
+    .btn-outline:hover:not(:disabled) { background: #fff5f2; }
+
+    .btn-icon {
       font-size: 14px;
-      font-weight: bold;
-      transition: background 0.3s;
+      flex-shrink: 0;
     }
-    
-    .btn-start {
-      background: #27ae60;
-      color: white;
-    }
-    
-    .btn-start:hover {
-      background: #229954;
-    }
-    
-    .btn-stop {
-      background: #e74c3c;
-      color: white;
-    }
-    
-    .btn-stop:hover {
-      background: #c0392b;
-    }
-    
-    .btn-export {
-      background: #3498db;
-      color: white;
-    }
-    
-    .btn-export:hover {
-      background: #2980b9;
-    }
-    
-    .btn-clear {
-      background: #95a5a6;
-      color: white;
-    }
-    
-    .btn-clear:hover {
-      background: #7f8c8d;
-    }
-    
-    .info {
-      font-size: 11px;
-      color: #888;
-      margin-top: 15px;
+
+    /* ── Footer ── */
+    .footer {
+      margin: 10px 12px 12px;
+      font-size: 10.5px;
+      color: #9ca3af;
       text-align: center;
-      line-height: 1.4;
+      line-height: 1.5;
     }
-    
-    .hidden {
-      display: none;
-    }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <h1>🔍 HAR Traffic Capturer</h1>
-  
-  <div id="status" class="status idle">
-    <div class="status-text" id="statusText">Ready to capture</div>
-    <div class="entry-count" id="entryCount">0 requests captured</div>
+
+  <div class="header">
+    <!-- UiPath logomark: orange rounded square, white U + i-dot -->
+    <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="7" fill="#fa4616"/>
+      <rect x="8"    y="8"  width="6.5" height="19" rx="3.2" fill="white"/>
+      <rect x="25.5" y="8"  width="6.5" height="19" rx="3.2" fill="white"/>
+      <rect x="8"    y="24" width="24"  height="6.5" rx="3.2" fill="white"/>
+      <circle cx="34" cy="7.5" r="4" fill="white"/>
+    </svg>
+    <div>
+      <div class="brand-text">
+        <span class="brand-ui">Ui</span><span class="brand-path">Path</span>
+      </div>
+      <span class="brand-subtitle">HAR Capturer</span>
+    </div>
   </div>
-  
-  <button id="btnStart" class="btn-start">▶ Start Capture</button>
-  <button id="btnStop" class="btn-stop hidden">⏹ Stop Capture</button>
-  <button id="btnExport" class="btn-export">💾 Export HAR</button>
-  <button id="btnClear" class="btn-clear">🗑 Clear Data</button>
-  
-  <div class="info">
-    Captures HTTP/HTTPS traffic from the current tab<br>
-    and exports in HAR format for analysis
+
+  <div class="status-card">
+    <div id="statusDot" class="status-dot"></div>
+    <div>
+      <div class="status-label" id="statusText">Ready to capture</div>
+      <div class="status-count" id="entryCount">0 requests captured</div>
+    </div>
   </div>
-  
+
+  <div class="btn-group">
+    <button id="btnStart" class="btn-primary">
+      <span class="btn-icon">▶</span> Start Capture
+    </button>
+    <button id="btnStop" class="btn-danger hidden">
+      <span class="btn-icon">⏹</span> Stop Capture
+    </button>
+    <button id="btnViewer" class="btn-outline">
+      <span class="btn-icon">📋</span> Open Request Viewer
+    </button>
+    <button id="btnExport" class="btn-secondary">
+      <span class="btn-icon">💾</span> Export HAR
+    </button>
+    <button id="btnClear" class="btn-secondary">
+      <span class="btn-icon">🗑</span> Clear Data
+    </button>
+  </div>
+
+  <div class="footer">
+    Captures API traffic from the active tab<br>
+    and exports in HAR format for performance testing
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
