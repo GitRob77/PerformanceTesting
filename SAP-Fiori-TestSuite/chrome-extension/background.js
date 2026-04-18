@@ -380,6 +380,18 @@ async function dispatch(msg) {
       return { entries: filtered, blocks: blockSummary(entries) };
     }
 
+    // Returns the most recent N entries (newest first) for the live feed
+    case 'GET_RECENT_ENTRIES': {
+      const entries  = await loadEntries();
+      const filtered = msg.filters ? applyFilters(entries, msg.filters) : entries;
+      const limit    = msg.limit ?? 100;
+      return {
+        entries: filtered.slice(-limit).reverse(),
+        total:   filtered.length,
+        blocks:  blockSummary(entries),
+      };
+    }
+
     case 'EXPORT_HAR': {
       const entries = await loadEntries();
       return { har: buildHar(entries, msg.filters ?? null) };
@@ -523,3 +535,12 @@ function patternToRegex(pattern) {
   }
   return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 }
+
+// ── Side Panel ────────────────────────────────────────────────────────────────
+
+// Make the extension icon click open the side panel directly (Chrome 114+)
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
+    // Older Chrome without sidePanel API — silently ignore
+  });
+});
