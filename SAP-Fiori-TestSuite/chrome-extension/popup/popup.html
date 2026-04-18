@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!--
+  chrome-extension/popup/popup.html
+
+  Extension popup for the SAP Fiori HTTP Recorder.
+  Dark theme, 460px wide, monospace for all technical data.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SAP Fiori Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header class="app-header">
+    <div class="app-title">
+      <span class="logo">◉</span>
+      SAP Fiori Recorder
+    </div>
+    <span class="status-badge idle" id="statusBadge">Idle</span>
+  </header>
+
+  <!-- ── Current-block bar (visible while recording) ── -->
+  <div class="current-block-bar hidden" id="currentBlockBar">
+    <span>Recording block:</span>
+    <span class="block-label" id="currentBlockLabel">—</span>
+  </div>
+
+  <!-- ── Recording controls ── -->
+  <section class="panel">
+    <div class="panel-body">
+      <div class="field-row">
+        <input
+          type="text"
+          id="blockNameInput"
+          class="text-input"
+          placeholder="Block name  (e.g. Login)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary"  id="startBtn">▶ Start Recording</button>
+        <button class="btn btn-danger  hidden" id="stopBtn">■ Stop</button>
+        <button class="btn btn-secondary hidden" id="newBlockBtn">⏭ New Block</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Filters ── -->
+  <section class="panel" id="filterPanel">
+    <div class="panel-header clickable" id="filterToggle">
+      <span>Filters</span>
+      <span class="chevron" id="filterChevron">▶</span>
+    </div>
+    <div class="panel-body collapsed" id="filterBody">
+
+      <div class="field-row">
+        <label class="field-label">URL pattern</label>
+        <input
+          type="text"
+          id="urlFilter"
+          class="text-input mono"
+          placeholder="/sap/opu/odata/"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <div class="field-row">
+        <label class="field-label">Status codes</label>
+        <div class="checkbox-row">
+          <label class="cb-label" data-range="2xx"><input type="checkbox" class="status-cb" value="2xx" checked> 2xx</label>
+          <label class="cb-label" data-range="3xx"><input type="checkbox" class="status-cb" value="3xx" checked> 3xx</label>
+          <label class="cb-label" data-range="4xx"><input type="checkbox" class="status-cb" value="4xx" checked> 4xx</label>
+          <label class="cb-label" data-range="5xx"><input type="checkbox" class="status-cb" value="5xx" checked> 5xx</label>
+          <label class="cb-label" data-range="0xx"><input type="checkbox" class="status-cb" value="0xx" checked> Err</label>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label">Functional block</label>
+        <select id="blockFilter" class="select-input">
+          <option value="">All blocks</option>
+        </select>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Summary table ── -->
+  <section class="panel">
+    <div class="panel-header">
+      <span>Recorded Traffic</span>
+      <span class="badge" id="totalBadge">0 requests</span>
+    </div>
+    <div id="summaryWrap">
+      <div class="empty-state" id="emptyState">
+        No requests captured yet.<br>Enter a block name and click Start Recording.
+      </div>
+      <div class="summary-table-wrap hidden" id="tableWrap">
+        <table class="summary-table" id="summaryTable">
+          <thead>
+            <tr>
+              <th>Block</th>
+              <th style="text-align:right">Reqs</th>
+              <th style="text-align:right">✓</th>
+              <th style="text-align:right">✗</th>
+              <th style="text-align:right">Total</th>
+              <th style="text-align:right">Avg</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <div class="footer">
+    <div class="footer-left">
+      <button class="btn btn-action" id="exportBtn">⬇ Export HAR</button>
+    </div>
+    <div class="footer-right">
+      <button class="btn btn-ghost-danger" id="clearBtn">⊗ Clear All</button>
+    </div>
+  </div>
+
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
