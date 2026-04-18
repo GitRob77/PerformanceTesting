@@ -46,7 +46,8 @@ function showToast(text, type = '') {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let pollTimer = null;
+let pollTimer        = null;
+let enteringNewBlock = false;  // true while user is typing a new block name
 
 // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -67,15 +68,17 @@ function renderState(state) {
   $('stopBtn').classList.toggle('hidden',     !recording);
   $('newBlockBtn').classList.toggle('hidden', !recording);
 
-  // Block name input
-  const input = $('blockNameInput');
-  if (recording) {
-    input.value       = currentBlock ?? '';
-    input.disabled    = true;
-    input.placeholder = 'Currently recording…';
-  } else {
-    input.disabled    = false;
-    input.placeholder = 'Block name  (e.g. Login)';
+  // Block name input — leave it alone while the user is entering a new block name
+  if (!enteringNewBlock) {
+    const input = $('blockNameInput');
+    if (recording) {
+      input.value       = currentBlock ?? '';
+      input.disabled    = true;
+      input.placeholder = 'Currently recording…';
+    } else {
+      input.disabled    = false;
+      input.placeholder = 'Block name  (e.g. Login)';
+    }
   }
 
   // Total requests badge
@@ -210,21 +213,30 @@ $('stopBtn').addEventListener('click', async () => {
   await refresh();
 });
 
-$('newBlockBtn').addEventListener('click', async () => {
-  // Reveal an inline prompt inside the input field
+$('newBlockBtn').addEventListener('click', () => {
+  if (enteringNewBlock) return;          // already waiting for input
+  enteringNewBlock = true;
+  stopPolling();                         // prevent renderState from re-disabling the field
+
   const input = $('blockNameInput');
   input.disabled    = false;
   input.value       = '';
-  input.placeholder = 'Enter new block name…';
+  input.placeholder = 'New block name — press Enter';
   input.focus();
+});
 
-  // Confirm on Enter or when focus leaves
-  const commit = async () => {
-    const name = input.value.trim();
+// Single permanent keydown handler on the input for new-block entry mode
+$('blockNameInput').addEventListener('keydown', async (e) => {
+  if (!enteringNewBlock) return;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const name = $('blockNameInput').value.trim();
     if (!name) {
       showToast('Block name cannot be empty.', 'error');
       return;
     }
+    enteringNewBlock = false;
     const res = await msg({ type: 'NEW_BLOCK', blockName: name });
     if (res?.success) {
       showToast(`Block → "${name}"`, 'success');
@@ -232,17 +244,14 @@ $('newBlockBtn').addEventListener('click', async () => {
       showToast(res?.error ?? 'Failed to switch block', 'error');
     }
     await refresh();
-  };
+    startPolling();
 
-  input.addEventListener('keydown', async function handler(e) {
-    if (e.key === 'Enter') {
-      input.removeEventListener('keydown', handler);
-      await commit();
-    } else if (e.key === 'Escape') {
-      input.removeEventListener('keydown', handler);
-      await refresh(); // restore previous state
-    }
-  });
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    enteringNewBlock = false;
+    await refresh();    // restores input to disabled + current block name
+    startPolling();
+  }
 });
 
 $('exportBtn').addEventListener('click', async () => {
