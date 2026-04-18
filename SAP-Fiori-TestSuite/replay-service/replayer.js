@@ -338,31 +338,42 @@ export class Replayer {
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 function _extractLoginCredentialsFromHar(entries) {
-  // Find the first login POST request and extract username/password
+  // Find the LAST successful login POST (most recent attempt, likely correct credentials)
+  let lastValidParams = null;
+
   for (const entry of entries ?? []) {
     const body = entry.request?.postData?.text ?? '';
     if (!body.includes('sap-user=') && !body.includes('sap-logonname=')) continue;
 
-    // Parse form data
+    // Parse form data using URLSearchParams to handle encoding correctly
     const params = {};
-    for (const pair of body.split('&')) {
-      const [key, value] = pair.split('=');
-      if (!key) continue;
-      const decodedKey = decodeURIComponent(key);
-      const decodedValue = decodeURIComponent(value || '');
+    try {
+      const sp = new URLSearchParams(body);
+      if (sp.has('sap-user')) params.username = sp.get('sap-user');
+      if (sp.has('sap-logonname')) params.username = sp.get('sap-logonname');
+      if (sp.has('sap-password')) params.password = sp.get('sap-password');
+    } catch (e) {
+      // Fallback to manual parsing if URLSearchParams fails
+      for (const pair of body.split('&')) {
+        const [key, value] = pair.split('=');
+        if (!key) continue;
+        const decodedKey = decodeURIComponent(key);
+        const decodedValue = decodeURIComponent(value || '');
 
-      if (decodedKey === 'sap-user' || decodedKey === 'sap-logonname') {
-        params.username = decodedValue;
-      } else if (decodedKey === 'sap-password') {
-        params.password = decodedValue;
+        if (decodedKey === 'sap-user' || decodedKey === 'sap-logonname') {
+          params.username = decodedValue;
+        } else if (decodedKey === 'sap-password') {
+          params.password = decodedValue;
+        }
       }
     }
 
     if (params.username && params.password) {
-      return params;
+      lastValidParams = params;  // Keep updating to get the last one
     }
   }
-  return {};
+
+  return lastValidParams || {};
 }
 
 function _isStaticAsset(entry) {
