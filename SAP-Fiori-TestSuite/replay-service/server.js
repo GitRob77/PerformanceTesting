@@ -6,9 +6,11 @@
  * Runs replay jobs and streams progress so the panel can show live results.
  *
  * Endpoints:
+ *   GET  /                  → web UI
  *   GET  /health            → { status, version, jobs }
  *   POST /replay            → { jobId }   (starts async job)
  *   GET  /status/:jobId     → { status, progress, results[], report, error }
+ *   POST /resend            → { url, method, headers, body } → { status, headers[], body, durationMs }
  *
  * Usage:
  *   node server.js            (default port 7331)
@@ -16,11 +18,23 @@
  */
 
 import { createServer } from 'node:http';
+import { readFileSync }  from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { Replayer }     from './replayer.js';
 import { buildReport }  from './report.js';
 
 const PORT = parseInt(process.env.PORT ?? '7331', 10);
 const VERSION = '0.1.0';
+const __dir = dirname(fileURLToPath(import.meta.url));
+
+// Serve the UI HTML (read once at startup)
+let UI_HTML = '';
+try {
+  UI_HTML = readFileSync(join(__dir, 'ui.html'), 'utf8');
+} catch {
+  UI_HTML = '<h1>ui.html not found</h1>';
+}
 
 // ── Job store ─────────────────────────────────────────────────────────────────
 
@@ -115,6 +129,13 @@ function router(req, res) {
     return;
   }
 
+  // GET / or /ui — serve web UI
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/ui')) {
+    res.writeHead(200, { ...CORS, 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(UI_HTML);
+    return;
+  }
+
   // GET /health
   if (req.method === 'GET' && req.url === '/health') {
     json(res, 200, {
@@ -172,6 +193,48 @@ function router(req, res) {
       error:    job.error,
       elapsedMs: Date.now() - job.startedAt,
     });
+    return;
+  }
+
+  // POST /resend — resend a single request with modified headers
+  if (req.method === 'POST' && req.url === '/resend') {
+    readBody(req).then(raw => {
+      let body;
+      try { body = JSON.parse(raw); }
+      catch { json(res, 400, { error: 'Invalid JSON body' }); return; }
+
+      const { url, method = 'GET', headers = {}, body: reqBody } = body;
+      if (!url) { json(res, 400, { error: 'url is required' }); return; }
+
+      const t0 = performance.now();
+      fetch(url, {
+        method,
+        headers,
+        body: reqBody || undefined,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+      })
+      .then(async (resp) => {
+        const respBody = await resp.text().catch(() => '');
+        const durationMs = Math.round(performance.now() - t0);
+
+        json(res, 200, {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: [...resp.headers.entries()].map(([name, value]) => ({ name, value })),
+          body: respBody.slice(0, 5000),  // Limit response body size
+          durationMs,
+        });
+      })
+      .catch(err => {
+        const durationMs = Math.round(performance.now() - t0);
+        json(res, 200, {
+          status: 0,
+          error: err.message,
+          durationMs,
+        });
+      });
+    }).catch(err => json(res, 500, { error: err.message }));
     return;
   }
 
