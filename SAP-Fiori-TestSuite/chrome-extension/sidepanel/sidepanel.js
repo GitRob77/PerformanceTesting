@@ -160,6 +160,7 @@ function renderState(state, feedData) {
 
   // Buttons
   $('startBtn').classList.toggle('hidden',    recording);
+  $('reloadBtn').classList.toggle('hidden',   recording);
   $('stopBtn').classList.toggle('hidden',     !recording);
   $('newBlockBtn').classList.toggle('hidden', !recording);
 
@@ -240,18 +241,21 @@ function getFilters() {
 
 // ── Event listeners ───────────────────────────────────────────────────────────
 
-$('startBtn').addEventListener('click', async () => {
+async function startRec(reload = false) {
   const name = $('blockNameInput').value.trim() || 'Block 1';
   lastEntryCount = 0;
-  const res = await msg({ type: 'START_RECORDING', blockName: name });
+  const res = await msg({ type: 'START_RECORDING', blockName: name, reload });
   if (res?.success) {
-    showToast(`Recording "${name}"`, 'success');
+    showToast(reload ? `⟳ Reloading tab — recording "${name}"` : `Recording "${name}"`, 'success');
     startPolling();
   } else {
     showToast(res?.error ?? 'Failed to start', 'error');
   }
   await refresh();
-});
+}
+
+$('startBtn').addEventListener('click',  () => startRec(false));
+$('reloadBtn').addEventListener('click', () => startRec(true));
 
 $('stopBtn').addEventListener('click', async () => {
   const res = await msg({ type: 'STOP_RECORDING' });

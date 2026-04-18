@@ -282,7 +282,7 @@ function finalizeWithResponse(requestId, response, timestamp, bodyText) {
 
 // ── Recording control ────────────────────────────────────────────────────────
 
-async function startRecording(blockName) {
+async function startRecording(blockName, reloadTab = false) {
   if (recording) return { success: false, error: 'Already recording. Stop the current session first.' };
 
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -313,6 +313,12 @@ async function startRecording(blockName) {
 
   await saveRecordingState();
   startKeepalive();
+
+  // Reload the tab so the full page-load traffic is captured from the very first request
+  if (reloadTab) {
+    await chrome.debugger.sendCommand({ tabId }, 'Page.enable', {}).catch(() => {});
+    await chrome.tabs.reload(tabId);
+  }
 
   return { success: true };
 }
@@ -366,7 +372,7 @@ async function dispatch(msg) {
     }
 
     case 'START_RECORDING':
-      return startRecording(msg.blockName);
+      return startRecording(msg.blockName, msg.reload ?? false);
 
     case 'STOP_RECORDING':
       return stopRecording();
