@@ -192,6 +192,7 @@ function renderState(state, feedData) {
   // Feed + summary
   renderFeed(entries, total);
   renderSummary(feedData?.blocks ?? blocks, currentBlock, recording);
+  syncReplayBlocks(feedData?.blocks ?? blocks);
 }
 
 // ── Polling ───────────────────────────────────────────────────────────────────
@@ -349,6 +350,243 @@ document.querySelectorAll('.status-cb, #blockFilter')
   .forEach(el => el.addEventListener('change', refresh));
 $('urlFilter').addEventListener('input', refresh);
 
+// ── Replay panel ──────────────────────────────────────────────────────────────
+
+let replayJobId     = null;
+let replayPollTimer = null;
+let lastReplayResults = [];
+
+// Toggle open/close
+$('replayToggle').addEventListener('click', () => {
+  const body    = $('replayBody');
+  const chevron = $('replayChevron');
+  const open    = !body.classList.contains('collapsed');
+  body.classList.toggle('collapsed', open);
+  chevron.textContent = open ? '▶' : '▼';
+  if (!open) pingServer();   // auto-ping when opening
+});
+
+// Ping the local server
+async function pingServer() {
+  const url    = $('replayServerUrl').value.trim();
+  const el     = $('replayServerStatus');
+  el.className = 'replay-server-status';
+  el.textContent = 'Checking…';
+  try {
+    const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
+    const data = await resp.json();
+    el.className   = 'replay-server-status ok';
+    el.textContent = `✓ Server ready  (v${data.version})`;
+  } catch {
+    el.className   = 'replay-server-status error';
+    el.textContent = '✗ Server not reachable — run: node server.js';
+  }
+}
+
+$('replayPingBtn').addEventListener('click', pingServer);
+
+// Parse "key=value\nkey2=value2" textarea into params object
+function parseParams(text) {
+  const params = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq > 0) params[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return params;
+}
+
+// Run replay
+$('replayRunBtn').addEventListener('click', async () => {
+  const serverUrl  = $('replayServerUrl').value.trim();
+  const iterations = parseInt($('replayIterations').value, 10) || 1;
+  const vusers     = parseInt($('replayVus').value, 10) || 1;
+  const params     = parseParams($('replayParams').value);
+  const blockVal   = $('replayBlockFilter').value;
+  const blocks     = blockVal ? [blockVal] : null;
+
+  // Get all recorded entries from background
+  const entryRes = await msg({ type: 'GET_ENTRIES' });
+  if (!entryRes?.entries?.length) {
+    showToast('No recorded entries to replay.', 'error');
+    return;
+  }
+
+  // Start job
+  let jobRes;
+  try {
+    const resp = await fetch(`${serverUrl}/replay`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        entries: entryRes.entries,
+        options: { iterations, vusers, params, blocks },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    jobRes = await resp.json();
+  } catch (err) {
+    showToast(`Cannot reach replay server: ${err.message}`, 'error');
+    $('replayServerStatus').className   = 'replay-server-status error';
+    $('replayServerStatus').textContent = '✗ Server not reachable — run: node server.js';
+    return;
+  }
+
+  if (!jobRes?.jobId) {
+    showToast(jobRes?.error ?? 'Failed to start replay job.', 'error');
+    return;
+  }
+
+  replayJobId = jobRes.jobId;
+  lastReplayResults = [];
+
+  $('replayRunBtn').classList.add('hidden');
+  $('replayCancelBtn').classList.remove('hidden');
+  $('replayProgress').classList.remove('hidden');
+  $('replayResults').classList.add('hidden');
+  $('replayProgressFill').style.width = '0%';
+  $('replayProgressLabel').textContent = `0 / ${iterations * vusers} iterations`;
+
+  showToast(`Replay started — ${iterations} iter × ${vusers} VU(s)`, 'success');
+
+  // Poll for status
+  replayPollTimer = setInterval(() => pollReplayJob(serverUrl), 1000);
+});
+
+async function pollReplayJob(serverUrl) {
+  try {
+    const resp = await fetch(`${serverUrl}/status/${replayJobId}`,
+      { signal: AbortSignal.timeout(3000) });
+    const data = await resp.json();
+
+    // Update progress bar
+    const { completed, total } = data.progress;
+    const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+    $('replayProgressFill').style.width  = `${pct}%`;
+    $('replayProgressLabel').textContent =
+      `${completed} / ${total} iterations  (${data.elapsedMs ? (data.elapsedMs / 1000).toFixed(1) + 's' : ''})`;
+
+    // Live-update results table as iterations complete
+    if (data.results?.length !== lastReplayResults.length) {
+      lastReplayResults = data.results ?? [];
+      if (data.report) renderReplayReport(data.report, false);
+    }
+
+    if (data.status === 'done' || data.status === 'error') {
+      clearInterval(replayPollTimer);
+      replayPollTimer = null;
+      replayJobId = null;
+
+      $('replayRunBtn').classList.remove('hidden');
+      $('replayCancelBtn').classList.add('hidden');
+      $('replayProgressFill').style.width = '100%';
+
+      if (data.status === 'done') {
+        renderReplayReport(data.report, true);
+        showToast(`Replay complete — ${data.results.length} requests`, 'success');
+      } else {
+        showToast(`Replay error: ${data.error}`, 'error');
+      }
+    }
+  } catch (err) {
+    console.warn('[Replay] poll failed:', err.message);
+  }
+}
+
+function renderReplayReport(report, final) {
+  const tbody  = $('replayResultsBody');
+  const rows   = [...(report.blockStats ?? []), report.overall].filter(Boolean);
+  const label  = $('replayResultsLabel');
+
+  $('replayResults').classList.remove('hidden');
+  label.textContent = final ? '✓ Results' : '⟳ In progress…';
+
+  tbody.innerHTML = '';
+
+  // Business-critical rows
+  for (const s of rows) {
+    const isTotal  = s.block === 'TOTAL';
+    const errPct   = s.count > 0 ? Math.round(s.errors / s.count * 100) : 0;
+    const tr       = document.createElement('tr');
+    if (isTotal) tr.style.fontWeight = '600';
+    if (errPct > 0) tr.classList.add('replay-err-row');
+
+    tr.innerHTML = `
+      <td class="cell-block" title="${escHtml(s.block)}">${escHtml(s.block)}</td>
+      <td class="cell-num">${s.count}</td>
+      <td class="cell-num">${errPct}%</td>
+      <td class="cell-num ${speedClass(s.avgMs)}">${fmtMs(s.avgMs)}</td>
+      <td class="cell-num ${speedClass(s.p90Ms)}">${fmtMs(s.p90Ms)}</td>
+      <td class="cell-num ${speedClass(s.p95Ms)}">${fmtMs(s.p95Ms)}</td>
+      <td class="cell-num ${speedClass(s.maxMs)}">${fmtMs(s.maxMs)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Excluded-from-SLA row (grayed out, clearly labelled)
+  if (report.excluded) {
+    const s      = report.excluded;
+    const errPct = s.count > 0 ? Math.round(s.errors / s.count * 100) : 0;
+    const tr     = document.createElement('tr');
+    tr.style.cssText = 'opacity:0.55; font-style:italic;';
+    tr.title = 'Not counted against SLA — optional/non-critical services (e.g. ESH_SEARCH_SRV)';
+
+    tr.innerHTML = `
+      <td class="cell-block">⚠ Excluded from SLA</td>
+      <td class="cell-num">${s.count}</td>
+      <td class="cell-num">${errPct}%</td>
+      <td class="cell-num">${fmtMs(s.avgMs)}</td>
+      <td class="cell-num">${fmtMs(s.p90Ms)}</td>
+      <td class="cell-num">${fmtMs(s.p95Ms)}</td>
+      <td class="cell-num">${fmtMs(s.maxMs)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+$('replayCancelBtn').addEventListener('click', () => {
+  if (replayPollTimer) { clearInterval(replayPollTimer); replayPollTimer = null; }
+  replayJobId = null;
+  $('replayRunBtn').classList.remove('hidden');
+  $('replayCancelBtn').classList.add('hidden');
+  $('replayProgressLabel').textContent = 'Cancelled';
+  showToast('Replay cancelled', '');
+});
+
+$('replayExportBtn').addEventListener('click', () => {
+  if (!lastReplayResults.length) return;
+  const cols = ['vu','iteration','seq','block','method','url','status','durationMs','success','excludedFromSla','error'];
+  const rows = [cols.join(',')];
+  for (const r of lastReplayResults) {
+    rows.push(cols.map(c => {
+      const v = String(r[c] ?? '');
+      return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v;
+    }).join(','));
+  }
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url, download: `sap-replay-${Date.now()}.csv`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported', 'success');
+});
+
+// Keep replay block filter in sync with recorded blocks
+function syncReplayBlocks(blocks) {
+  const sel   = $('replayBlockFilter');
+  const prev  = sel.value;
+  sel.innerHTML = '<option value="">All blocks</option>';
+  for (const row of blocks) {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = row.block;
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -357,4 +595,7 @@ $('urlFilter').addEventListener('input', refresh);
   if (state?.recording) startPolling();
 })();
 
-window.addEventListener('unload', stopPolling);
+window.addEventListener('unload', () => {
+  stopPolling();
+  if (replayPollTimer) clearInterval(replayPollTimer);
+});

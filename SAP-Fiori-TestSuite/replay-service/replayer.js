@@ -106,8 +106,9 @@ class CookieStore {
  * @property {string}  url          Request URL (after param substitution)
  * @property {number}  status       HTTP status code (0 = network error)
  * @property {number}  durationMs   Round-trip time in milliseconds
- * @property {boolean} success      true if status 2xx–3xx and no network error
- * @property {string|null} error    Error message for network failures
+ * @property {boolean} success          true if status 2xx–3xx and no network error
+ * @property {boolean} excludedFromSla  true if URL matched an excludeFromSla pattern
+ * @property {string|null} error        Error message for network failures
  */
 
 export class Replayer {
@@ -125,9 +126,13 @@ export class Replayer {
       blocks:            options.blocks           ?? null,
       thinkTimeMs:       options.thinkTimeMs      ?? 0,
       skipStaticAssets:  options.skipStaticAssets ?? false,
+      excludeFromSla:    options.excludeFromSla   ?? [],
       debug:             options.debug            ?? false,
       timeout:           options.timeout          ?? 30_000,
     };
+
+    // Pre-compile excludeFromSla patterns once
+    this._excludePatterns = this._options.excludeFromSla.map(p => new RegExp(p));
 
     // Filter entries
     let entries = harLog.entries ?? [];
@@ -239,6 +244,8 @@ export class Replayer {
 
       if (liveResp) session.processResponse(liveResp, entryIndex);
 
+      const excludedFromSla = this._excludePatterns.some(re => re.test(req.url));
+
       const result = {
         vu:         vuId,
         iteration,
@@ -250,6 +257,7 @@ export class Replayer {
         status,
         durationMs,
         success:    status >= 200 && status < 400 && !error,
+        excludedFromSla,
         error,
       };
 

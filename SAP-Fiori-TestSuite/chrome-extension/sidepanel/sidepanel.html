@@ -124,6 +124,87 @@
     </div>
   </section>
 
+  <!-- ── Replay ── -->
+  <section class="panel" id="replayPanel">
+    <div class="panel-header clickable" id="replayToggle">
+      <span>▶ Replay</span>
+      <span class="chevron" id="replayChevron">▶</span>
+    </div>
+    <div class="panel-body collapsed" id="replayBody">
+
+      <!-- Server connection -->
+      <div class="field-row">
+        <label class="field-label">Server</label>
+        <div class="replay-server-row">
+          <input type="text" id="replayServerUrl" class="text-input mono"
+                 value="http://localhost:7331" autocomplete="off" spellcheck="false"/>
+          <button class="btn btn-secondary" id="replayPingBtn">Ping</button>
+        </div>
+      </div>
+      <div id="replayServerStatus" class="replay-server-status"></div>
+
+      <!-- Config -->
+      <div class="field-row">
+        <label class="field-label">Iterations</label>
+        <input type="number" id="replayIterations" class="text-input replay-num"
+               value="1" min="1" max="10000"/>
+        <label class="field-label" style="margin-left:10px">VUs</label>
+        <input type="number" id="replayVus" class="text-input replay-num"
+               value="1" min="1" max="100"/>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Blocks</label>
+        <select id="replayBlockFilter" class="select-input">
+          <option value="">All blocks</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Params</label>
+        <textarea id="replayParams" class="text-input mono replay-params"
+                  placeholder="username=user1&#10;password=Pass1!&#10;host=https://server"
+                  rows="3" spellcheck="false"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary"  id="replayRunBtn">▶ Run Replay</button>
+        <button class="btn btn-ghost-danger hidden" id="replayCancelBtn">⊗ Cancel</button>
+      </div>
+
+      <!-- Progress -->
+      <div id="replayProgress" class="replay-progress hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="replayProgressFill"></div>
+        </div>
+        <div class="progress-label" id="replayProgressLabel">0 / 0 iterations</div>
+      </div>
+
+      <!-- Results -->
+      <div id="replayResults" class="hidden">
+        <div class="replay-results-header">
+          <span id="replayResultsLabel"></span>
+          <button class="btn-icon" id="replayExportBtn" title="Export results CSV">⬇ CSV</button>
+        </div>
+        <div class="summary-table-wrap">
+          <table class="summary-table" id="replayResultsTable">
+            <thead>
+              <tr>
+                <th>Block</th>
+                <th style="text-align:right">Reqs</th>
+                <th style="text-align:right">Err%</th>
+                <th style="text-align:right">Avg</th>
+                <th style="text-align:right">P90</th>
+                <th style="text-align:right">P95</th>
+                <th style="text-align:right">Max</th>
+              </tr>
+            </thead>
+            <tbody id="replayResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
   <!-- ── Footer ── -->
   <div class="footer">
     <div class="footer-left">

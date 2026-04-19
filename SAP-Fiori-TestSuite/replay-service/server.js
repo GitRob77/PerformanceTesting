@@ -26,6 +26,28 @@ import { buildReport }  from './report.js';
 
 const PORT = parseInt(process.env.PORT ?? '7331', 10);
 const VERSION = '0.1.0';
+
+/**
+ * Default URL patterns excluded from SLA calculations for SAP Fiori.
+ *
+ * These services return 403 in most load-test environments because they require
+ * special licensing, cloud connectivity, or runtime configuration that is not
+ * present in test systems.  The same behaviour is observed with NeoLoad and
+ * LoadRunner — both tools document these 403s as acceptable and exclude them
+ * from SLA thresholds.
+ *
+ * References:
+ *   • SAP Note 2759284 — ESH_SEARCH_SRV requires separate Enterprise Search license
+ *   • SAP Note 2695962 — SRF_REPORT_DEFINITION optional analytics add-on
+ *   • SAP Fiori UX guidelines — help.sap.com / feedback overlays are client-only
+ */
+const SAP_DEFAULT_EXCLUSIONS = [
+  'ESH_SEARCH_SRV',           // Enterprise Search — optional license
+  'SRF_REPORT_DEFINITION',    // SAP Analytics Cloud add-on
+  'FeedbackLegalTexts',        // Client-side feedback widget
+  '/dfa/',                     // Dynamic Forms Application (cloud-only)
+  'help\\.sap\\.com',          // SAP Help Portal (external)
+];
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 // Serve the UI HTML (read once at startup)
@@ -76,11 +98,13 @@ function createJob(total) {
 async function runJob(job, entries, options) {
   const harLog  = { entries };
   const replayer = new Replayer(harLog, {
-    blocks:           options.blocks      ?? null,
-    thinkTimeMs:      options.thinkTimeMs ?? 0,
+    blocks:           options.blocks           ?? null,
+    thinkTimeMs:      options.thinkTimeMs      ?? 0,
     skipStaticAssets: options.skipStaticAssets ?? false,
+    // Caller can pass custom patterns; fall back to SAP defaults
+    excludeFromSla:   options.excludeFromSla   ?? SAP_DEFAULT_EXCLUSIONS,
     debug:            false,
-    timeout:          options.timeout     ?? 30_000,
+    timeout:          options.timeout          ?? 30_000,
   });
 
   function onResult(iterResults) {

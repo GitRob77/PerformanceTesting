@@ -35,6 +35,13 @@
 const pending = new Map();
 
 /**
+ * In-memory entries array — the source of truth during a session.
+ * Synchronous .push() is race-free; we debounce the write to storage.
+ * @type {object[]}
+ */
+let entries = [];
+
+/**
  * Runtime recording state. Kept in memory for speed; persisted to storage
  * after each change so the popup and future SW activations can read it.
  */
@@ -53,28 +60,69 @@ async function saveRecordingState() {
   });
 }
 
-async function appendEntry(entry) {
-  const { [STORAGE_KEY_ENTRIES]: existing = [] } =
-    await chrome.storage.local.get(STORAGE_KEY_ENTRIES);
-  entry._entryIndex = existing.length;
-  existing.push(entry);
-  await chrome.storage.local.set({ [STORAGE_KEY_ENTRIES]: existing });
+// ── Debounced entry persistence ───────────────────────────────────────────────
+// appendEntry() is called for every completed network request.  When a page
+// loads, 50+ requests can finish within milliseconds of each other.  An async
+// read→push→write pattern would let concurrent calls race: each reads the same
+// stale snapshot, pushes its single entry, and overwrites all others.
+//
+// Fix: push synchronously into the in-memory `entries` array (no race possible),
+// then schedule a single storage write via a short debounce timer.  Force-flush
+// is called on stop/clear so no data is lost.
+
+let _persistTimer = null;
+
+function appendEntry(entry) {
+  entry._entryIndex = entries.length;
+  entries.push(entry);
+  schedulePersist();
 }
 
-async function loadEntries() {
-  const { [STORAGE_KEY_ENTRIES]: entries = [] } =
-    await chrome.storage.local.get(STORAGE_KEY_ENTRIES);
+function schedulePersist() {
+  if (_persistTimer) return;
+  _persistTimer = setTimeout(flushEntries, 500);
+}
+
+/** Strip response body text before writing to storage (biggest space consumer). */
+function slimEntry(entry) {
+  if (!entry.response?.content?.text) return entry;
+  return {
+    ...entry,
+    response: {
+      ...entry.response,
+      content: { ...entry.response.content, text: '' },
+    },
+  };
+}
+
+async function flushEntries() {
+  _persistTimer = null;
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY_ENTRIES]: entries.map(slimEntry) });
+  } catch (err) {
+    // Storage still full (e.g. unlimitedStorage not yet active after reload).
+    // The in-memory array is the source of truth — data is not lost.
+    console.warn('[Recorder] Could not persist entries to storage:', err.message);
+  }
+}
+
+function loadEntries() {
   return entries;
 }
 
 async function clearEntries() {
+  entries = [];
+  if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
   await chrome.storage.local.remove(STORAGE_KEY_ENTRIES);
 }
 
 // Restore state on service worker startup (after being killed by Chrome)
 async function restoreState() {
-  const { [STORAGE_KEY_STATE]: saved } =
-    await chrome.storage.local.get(STORAGE_KEY_STATE);
+  const { [STORAGE_KEY_STATE]: saved, [STORAGE_KEY_ENTRIES]: savedEntries = [] } =
+    await chrome.storage.local.get([STORAGE_KEY_STATE, STORAGE_KEY_ENTRIES]);
+
+  entries = savedEntries;
+
   if (!saved) return;
 
   recording    = saved.recording    ?? false;
@@ -128,7 +176,7 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
       await onLoadingFinished(params);
       break;
     case 'Network.loadingFailed':
-      await onLoadingFailed(params);
+      onLoadingFailed(params);
       break;
   }
 });
@@ -233,13 +281,13 @@ async function onLoadingFinished({ requestId, timestamp }) {
     // Body unavailable: redirect, binary, or buffer evicted — leave text: ''
   }
 
-  await appendEntry(toHarEntry(entry));
+  appendEntry(toHarEntry(entry));
 }
 
 /**
  * The request failed at network level.
  */
-async function onLoadingFailed({ requestId, timestamp, errorText, canceled }) {
+function onLoadingFailed({ requestId, timestamp, errorText, canceled }) {
   const entry = pending.get(requestId);
   if (!entry) return;
   pending.delete(requestId);
@@ -251,7 +299,7 @@ async function onLoadingFailed({ requestId, timestamp, errorText, canceled }) {
     entry.response = emptyErrorResponse(canceled ? 'Canceled' : (errorText ?? 'Network error'));
   }
 
-  await appendEntry(toHarEntry(entry));
+  appendEntry(toHarEntry(entry));
 }
 
 /**
@@ -337,6 +385,9 @@ async function stopRecording() {
   pending.clear();
   stopKeepalive();
 
+  // Force-flush any pending entries before reporting success
+  if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
+  await flushEntries();
   await saveRecordingState();
   return { success: true };
 }
@@ -362,12 +413,12 @@ async function dispatch(msg) {
   switch (msg.type) {
 
     case 'GET_STATE': {
-      const entries = await loadEntries();
+      const ents = loadEntries();
       return {
         recording,
         currentBlock,
-        entryCount: entries.length,
-        blocks:     blockSummary(entries),
+        entryCount: ents.length,
+        blocks:     blockSummary(ents),
       };
     }
 
@@ -381,26 +432,26 @@ async function dispatch(msg) {
       return switchBlock(msg.blockName);
 
     case 'GET_ENTRIES': {
-      const entries  = await loadEntries();
-      const filtered = msg.filters ? applyFilters(entries, msg.filters) : entries;
-      return { entries: filtered, blocks: blockSummary(entries) };
+      const ents     = loadEntries();
+      const filtered = msg.filters ? applyFilters(ents, msg.filters) : ents;
+      return { entries: filtered, blocks: blockSummary(ents) };
     }
 
     // Returns the most recent N entries (newest first) for the live feed
     case 'GET_RECENT_ENTRIES': {
-      const entries  = await loadEntries();
-      const filtered = msg.filters ? applyFilters(entries, msg.filters) : entries;
+      const ents     = loadEntries();
+      const filtered = msg.filters ? applyFilters(ents, msg.filters) : ents;
       const limit    = msg.limit ?? 100;
       return {
         entries: filtered.slice(-limit).reverse(),
         total:   filtered.length,
-        blocks:  blockSummary(entries),
+        blocks:  blockSummary(ents),
       };
     }
 
     case 'EXPORT_HAR': {
-      const entries = await loadEntries();
-      return { har: buildHar(entries, msg.filters ?? null) };
+      const ents = loadEntries();
+      return { har: buildHar(ents, msg.filters ?? null) };
     }
 
     case 'CLEAR_ALL':

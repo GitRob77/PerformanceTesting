@@ -14,23 +14,33 @@
 /**
  * Compute per-block and overall statistics from a flat array of ReplayResults.
  *
+ * Business-critical requests (not excluded from SLA) are reported separately
+ * from excluded requests (e.g. optional SAP services like ESH_SEARCH_SRV).
+ *
  * @param {import('./replayer.js').ReplayResult[]} results
- * @returns {{ blockStats: object[], overall: object }}
+ * @returns {{ blockStats: object[], overall: object, excluded: object|null, excludedCount: number }}
  */
 export function buildReport(results) {
-  const byBlock = new Map();
+  const businessCritical = results.filter(r => !r.excludedFromSla);
+  const excludedResults  = results.filter(r =>  r.excludedFromSla);
 
-  for (const r of results) {
+  // Per-block stats (business-critical only)
+  const byBlock = new Map();
+  for (const r of businessCritical) {
     const key = r.block ?? '(unassigned)';
     if (!byBlock.has(key)) byBlock.set(key, []);
     byBlock.get(key).push(r);
   }
-
   const blockStats = [...byBlock.entries()].map(([block, rows]) =>
     _stats(block, rows)
   );
 
-  return { blockStats, overall: _stats('TOTAL', results) };
+  return {
+    blockStats,
+    overall:      _stats('TOTAL', businessCritical),
+    excluded:     excludedResults.length > 0 ? _stats('Excluded from SLA', excludedResults) : null,
+    excludedCount: excludedResults.length,
+  };
 }
 
 function _stats(label, rows) {
@@ -67,7 +77,7 @@ const W = COL_WIDTHS.reduce((a, b) => a + b, 0);
 
 /**
  * Print a formatted summary table to stdout.
- * @param {{ blockStats: object[], overall: object }} report
+ * @param {{ blockStats: object[], overall: object, excluded: object|null }} report
  */
 export function printReport(report) {
   console.log('─'.repeat(W));
@@ -81,6 +91,18 @@ export function printReport(report) {
   console.log('─'.repeat(W));
   console.log(_row(_formatRow(report.overall)));
   console.log('─'.repeat(W));
+
+  if (report.excluded) {
+    console.log('');
+    console.log('  ⚠ Excluded from SLA (optional/non-critical services):');
+    console.log('─'.repeat(W));
+    console.log(_row(_formatRow(report.excluded)));
+    console.log('─'.repeat(W));
+    console.log(
+      `  These ${report.excludedCount} request(s) were replayed but not counted against SLA.\n` +
+      '  Failures here are expected and documented as acceptable.'
+    );
+  }
 }
 
 function _formatRow(s) {
@@ -109,7 +131,7 @@ function _pad(str, len) {
 
 const CSV_COLS = [
   'vu', 'iteration', 'seq', 'block', 'method', 'url',
-  'status', 'durationMs', 'success', 'error',
+  'status', 'durationMs', 'success', 'excludedFromSla', 'error',
 ];
 
 /**

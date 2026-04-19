@@ -136,3 +136,72 @@ html, body {
 
 /* push footer to bottom */
 .footer { margin-top: auto; }
+
+/* ── Replay panel ───────────────────────────────────────────────────────────── */
+
+.replay-server-row {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.replay-server-row .text-input { flex: 1; }
+
+.replay-server-status {
+  font-size: 11px;
+  padding: 2px 0 6px 0;
+  min-height: 16px;
+}
+.replay-server-status.ok    { color: var(--green); }
+.replay-server-status.error { color: var(--red); }
+
+.replay-num {
+  width: 60px !important;
+  text-align: center;
+}
+
+.replay-params {
+  resize: vertical;
+  min-height: 52px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Progress bar */
+.replay-progress {
+  margin: 8px 0 4px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  text-align: center;
+}
+
+/* Results header row */
+.replay-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Error rows in results table */
+.replay-err-row td { color: var(--red); }
