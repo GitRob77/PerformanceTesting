@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<!--
+  chrome-extension/sidepanel/sidepanel.html
+
+  Side panel — docked to the right side of the browser, stays visible
+  while the user navigates and records SAP Fiori HTTP traffic.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SAP Fiori Recorder</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header class="app-header">
+    <div class="app-title">
+      <span class="logo">◉</span>
+      SAP Fiori Recorder
+    </div>
+    <span class="status-badge idle" id="statusBadge">Idle</span>
+  </header>
+
+  <!-- ── Current-block bar ── -->
+  <div class="current-block-bar hidden" id="currentBlockBar">
+    <span>Block:</span>
+    <span class="block-label" id="currentBlockLabel">—</span>
+    <span class="req-live" id="liveCount"></span>
+  </div>
+
+  <!-- ── Recording controls ── -->
+  <section class="panel">
+    <div class="panel-body">
+      <div class="field-row">
+        <input
+          type="text"
+          id="blockNameInput"
+          class="text-input"
+          placeholder="Block name  (e.g. Login)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary"            id="startBtn">▶ Start</button>
+        <button class="btn btn-secondary"         id="reloadBtn" title="Attach debugger and reload the tab — captures every request from the first byte">⟳ Reload &amp; Record</button>
+        <button class="btn btn-danger   hidden"   id="stopBtn">■ Stop</button>
+        <button class="btn btn-secondary hidden"  id="newBlockBtn">⏭ New Block</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Live request feed ── -->
+  <section class="panel feed-panel" id="feedPanel">
+    <div class="panel-header">
+      <span>Live Requests</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge" id="totalBadge">0</span>
+        <button class="btn-icon" id="feedToggle" title="Collapse feed">▼</button>
+      </div>
+    </div>
+    <div id="feedWrap" class="feed-wrap">
+      <div class="empty-state" id="feedEmpty">No requests yet. Start recording.</div>
+      <div id="feedList" class="feed-list hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── Block summary ── -->
+  <section class="panel">
+    <div class="panel-header clickable" id="summaryToggle">
+      <span>Block Summary</span>
+      <span class="chevron" id="summaryChevron">▼</span>
+    </div>
+    <div id="summaryWrap" class="panel-body" style="padding:0">
+      <div class="summary-table-wrap">
+        <table class="summary-table" id="summaryTable">
+          <thead>
+            <tr>
+              <th>Block</th>
+              <th style="text-align:right">Reqs</th>
+              <th style="text-align:right">✓</th>
+              <th style="text-align:right">✗</th>
+              <th style="text-align:right">Total</th>
+              <th style="text-align:right">Avg</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Filters (collapsed by default) ── -->
+  <section class="panel" id="filterPanel">
+    <div class="panel-header clickable" id="filterToggle">
+      <span>Filters</span>
+      <span class="chevron" id="filterChevron">▶</span>
+    </div>
+    <div class="panel-body collapsed" id="filterBody">
+      <div class="field-row">
+        <label class="field-label">URL pattern</label>
+        <input type="text" id="urlFilter" class="text-input mono"
+               placeholder="/sap/opu/odata/" autocomplete="off" spellcheck="false"/>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Status codes</label>
+        <div class="checkbox-row">
+          <label class="cb-label" data-range="2xx"><input type="checkbox" class="status-cb" value="2xx" checked> 2xx</label>
+          <label class="cb-label" data-range="3xx"><input type="checkbox" class="status-cb" value="3xx" checked> 3xx</label>
+          <label class="cb-label" data-range="4xx"><input type="checkbox" class="status-cb" value="4xx" checked> 4xx</label>
+          <label class="cb-label" data-range="5xx"><input type="checkbox" class="status-cb" value="5xx" checked> 5xx</label>
+          <label class="cb-label" data-range="0xx"><input type="checkbox" class="status-cb" value="0xx" checked> Err</label>
+        </div>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Functional block</label>
+        <select id="blockFilter" class="select-input">
+          <option value="">All blocks</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Replay ── -->
+  <section class="panel" id="replayPanel">
+    <div class="panel-header clickable" id="replayToggle">
+      <span>▶ Replay</span>
+      <span class="chevron" id="replayChevron">▶</span>
+    </div>
+    <div class="panel-body collapsed" id="replayBody">
+
+      <!-- Server connection -->
+      <div class="field-row">
+        <label class="field-label">Server</label>
+        <div class="replay-server-row">
+          <input type="text" id="replayServerUrl" class="text-input mono"
+                 value="http://localhost:7331" autocomplete="off" spellcheck="false"/>
+          <button class="btn btn-secondary" id="replayPingBtn">Ping</button>
+        </div>
+      </div>
+      <div id="replayServerStatus" class="replay-server-status"></div>
+
+      <!-- Config -->
+      <div class="field-row">
+        <label class="field-label">Iterations</label>
+        <input type="number" id="replayIterations" class="text-input replay-num"
+               value="1" min="1" max="10000"/>
+        <label class="field-label" style="margin-left:10px">VUs</label>
+        <input type="number" id="replayVus" class="text-input replay-num"
+               value="1" min="1" max="100"/>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Blocks</label>
+        <select id="replayBlockFilter" class="select-input">
+          <option value="">All blocks</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Params</label>
+        <textarea id="replayParams" class="text-input mono replay-params"
+                  placeholder="username=user1&#10;password=Pass1!&#10;host=https://server"
+                  rows="3" spellcheck="false"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary"  id="replayRunBtn">▶ Run Replay</button>
+        <button class="btn btn-ghost-danger hidden" id="replayCancelBtn">⊗ Cancel</button>
+      </div>
+
+      <!-- Progress -->
+      <div id="replayProgress" class="replay-progress hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="replayProgressFill"></div>
+        </div>
+        <div class="progress-label" id="replayProgressLabel">0 / 0 iterations</div>
+      </div>
+
+      <!-- Results -->
+      <div id="replayResults" class="hidden">
+        <div class="replay-results-header">
+          <span id="replayResultsLabel"></span>
+          <button class="btn-icon" id="replayExportBtn" title="Export results CSV">⬇ CSV</button>
+        </div>
+        <div class="summary-table-wrap">
+          <table class="summary-table" id="replayResultsTable">
+            <thead>
+              <tr>
+                <th>Block</th>
+                <th style="text-align:right">Reqs</th>
+                <th style="text-align:right">Err%</th>
+                <th style="text-align:right">Avg</th>
+                <th style="text-align:right">P90</th>
+                <th style="text-align:right">P95</th>
+                <th style="text-align:right">Max</th>
+              </tr>
+            </thead>
+            <tbody id="replayResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <div class="footer">
+    <div class="footer-left">
+      <button class="btn btn-action"       id="exportBtn">⬇ Export HAR</button>
+    </div>
+    <div class="footer-right">
+      <button class="btn btn-ghost-danger" id="clearBtn">⊗ Clear All</button>
+    </div>
+  </div>
+
+</div>
+<script src="sidepanel.js"></script>
+</body>
+</html>

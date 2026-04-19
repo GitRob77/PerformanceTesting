@@ -21,12 +21,18 @@ const API_INDICATORS = ['/api/', '/v1/', '/v2/', '/graphql', '/rest/', '/service
 // Resource types to exclude when excludeResources is enabled
 const RESOURCE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.ico', '.mp4', '.webm', '.mp3'];
 
-// Load filter settings from storage
-chrome.storage.local.get(['filterSettings'], (result) => {
-  if (result.filterSettings) {
-    filterSettings = { ...filterSettings, ...result.filterSettings };
-  }
+// Restore state from storage when service worker wakes up
+chrome.storage.local.get(['filterSettings', 'capturedEntries'], (result) => {
+  if (result.filterSettings)   filterSettings   = { ...filterSettings, ...result.filterSettings };
+  if (result.capturedEntries)  capturedEntries  = result.capturedEntries;
 });
+
+// Persist entries to storage so the viewer can load them
+function persistEntries() {
+  chrome.storage.local.set({ capturedEntries }, () => {
+    if (chrome.runtime.lastError) console.warn('[HAR] persist failed:', chrome.runtime.lastError.message);
+  });
+}
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -38,8 +44,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ status: 'stopped', entries: capturedEntries });
   } else if (request.action === 'getStatus') {
     sendResponse({ isCapturing, entryCount: capturedEntries.length });
+  } else if (request.action === 'getEntries') {
+    sendResponse({ entries: capturedEntries });
   } else if (request.action === 'clearCapture') {
     capturedEntries = [];
+    chrome.storage.local.remove('capturedEntries');
     sendResponse({ status: 'cleared' });
   } else if (request.action === 'updateFilters') {
     filterSettings = { ...filterSettings, ...request.filters };
@@ -190,8 +199,9 @@ function handleNetworkEvent(method, params) {
         filtered: false
       };
       capturedEntries.push(entry);
+      persistEntries();
       break;
-      
+
     case 'Network.responseReceived':
       // Update entry with response info
       const existingEntry = capturedEntries.find(e => e.requestId === params.requestId);

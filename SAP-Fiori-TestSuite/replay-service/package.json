@@ -1,0 +1,10 @@
+{
+  "name": "sap-fiori-replay-service",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Headless SAP Fiori HTTP replay engine with correlation and CSV reporting",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "replay": "node runner.js"
+  }
+}

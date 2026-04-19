@@ -1,0 +1,281 @@
+#!/usr/bin/env node
+/**
+ * replay-service/server.js
+ *
+ * Local HTTP API server that the Chrome extension side panel talks to.
+ * Runs replay jobs and streams progress so the panel can show live results.
+ *
+ * Endpoints:
+ *   GET  /                  → web UI
+ *   GET  /health            → { status, version, jobs }
+ *   POST /replay            → { jobId }   (starts async job)
+ *   GET  /status/:jobId     → { status, progress, results[], report, error }
+ *   POST /resend            → { url, method, headers, body } → { status, headers[], body, durationMs }
+ *
+ * Usage:
+ *   node server.js            (default port 7331)
+ *   PORT=8080 node server.js
+ */
+
+import { createServer } from 'node:http';
+import { readFileSync }  from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { Replayer }     from './replayer.js';
+import { buildReport }  from './report.js';
+
+const PORT = parseInt(process.env.PORT ?? '7331', 10);
+const VERSION = '0.1.0';
+
+/**
+ * Default URL patterns excluded from SLA calculations for SAP Fiori.
+ *
+ * These services return 403 in most load-test environments because they require
+ * special licensing, cloud connectivity, or runtime configuration that is not
+ * present in test systems.  The same behaviour is observed with NeoLoad and
+ * LoadRunner — both tools document these 403s as acceptable and exclude them
+ * from SLA thresholds.
+ *
+ * References:
+ *   • SAP Note 2759284 — ESH_SEARCH_SRV requires separate Enterprise Search license
+ *   • SAP Note 2695962 — SRF_REPORT_DEFINITION optional analytics add-on
+ *   • SAP Fiori UX guidelines — help.sap.com / feedback overlays are client-only
+ */
+const SAP_DEFAULT_EXCLUSIONS = [
+  'ESH_SEARCH_SRV',           // Enterprise Search — optional license
+  'SRF_REPORT_DEFINITION',    // SAP Analytics Cloud add-on
+  'FeedbackLegalTexts',        // Client-side feedback widget
+  '/dfa/',                     // Dynamic Forms Application (cloud-only)
+  'help\\.sap\\.com',          // SAP Help Portal (external)
+];
+const __dir = dirname(fileURLToPath(import.meta.url));
+
+// Serve the UI HTML (read once at startup)
+let UI_HTML = '';
+try {
+  UI_HTML = readFileSync(join(__dir, 'ui.html'), 'utf8');
+} catch {
+  UI_HTML = '<h1>ui.html not found</h1>';
+}
+
+// ── Job store ─────────────────────────────────────────────────────────────────
+
+let _jobId = 0;
+/** @type {Map<string, Job>} */
+const jobs = new Map();
+
+/**
+ * @typedef {object} Job
+ * @property {string}   id
+ * @property {'running'|'done'|'error'} status
+ * @property {{ completed: number, total: number }} progress
+ * @property {object[]} results
+ * @property {object|null} report
+ * @property {string|null} error
+ * @property {number} startedAt  unix ms
+ */
+
+function createJob(total) {
+  const id  = String(++_jobId);
+  /** @type {Job} */
+  const job = {
+    id,
+    status:    'running',
+    progress:  { completed: 0, total },
+    results:   [],
+    report:    null,
+    error:     null,
+    startedAt: Date.now(),
+  };
+  jobs.set(id, job);
+  // Auto-cleanup after 10 minutes
+  setTimeout(() => jobs.delete(id), 10 * 60_000);
+  return job;
+}
+
+// ── Replay runner ─────────────────────────────────────────────────────────────
+
+async function runJob(job, entries, options) {
+  const harLog  = { entries };
+  const replayer = new Replayer(harLog, {
+    blocks:           options.blocks           ?? null,
+    thinkTimeMs:      options.thinkTimeMs      ?? 0,
+    skipStaticAssets: options.skipStaticAssets ?? false,
+    // Caller can pass custom patterns; fall back to SAP defaults
+    excludeFromSla:   options.excludeFromSla   ?? SAP_DEFAULT_EXCLUSIONS,
+    debug:            false,
+    timeout:          options.timeout          ?? 30_000,
+  });
+
+  function onResult(iterResults) {
+    job.results.push(...iterResults);
+    job.progress.completed++;
+  }
+
+  const vusers     = Math.max(1, options.vusers     ?? 1);
+  const iterations = Math.max(1, options.iterations ?? 1);
+  const params     = options.params ?? {};
+
+  const allResults = vusers > 1
+    ? await replayer.runConcurrent({ vusers, iterations, params, onResult })
+    : await replayer.run({ iterations, params, onResult });
+
+  job.report = buildReport(allResults);
+  job.status = 'done';
+}
+
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
+
+const CORS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function json(res, code, body) {
+  res.writeHead(code, { ...CORS, 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+// ── Request router ────────────────────────────────────────────────────────────
+
+function router(req, res) {
+  // CORS pre-flight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS);
+    res.end();
+    return;
+  }
+
+  // GET / or /ui — serve web UI
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/ui')) {
+    res.writeHead(200, { ...CORS, 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(UI_HTML);
+    return;
+  }
+
+  // GET /health
+  if (req.method === 'GET' && req.url === '/health') {
+    json(res, 200, {
+      status:  'ok',
+      version: VERSION,
+      jobs:    { running: [...jobs.values()].filter(j => j.status === 'running').length },
+    });
+    return;
+  }
+
+  // POST /replay  — body: { entries[], options }
+  if (req.method === 'POST' && req.url === '/replay') {
+    readBody(req).then(raw => {
+      let body;
+      try { body = JSON.parse(raw); }
+      catch { json(res, 400, { error: 'Invalid JSON body' }); return; }
+
+      const { entries, options = {} } = body;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        json(res, 400, { error: 'entries must be a non-empty array' });
+        return;
+      }
+
+      const vusers     = Math.max(1, options.vusers     ?? 1);
+      const iterations = Math.max(1, options.iterations ?? 1);
+      const job = createJob(vusers * iterations);
+
+      console.log(
+        `[Job ${job.id}] Starting: ${entries.length} entries × ` +
+        `${iterations} iter × ${vusers} VU(s)`
+      );
+
+      runJob(job, entries, options).catch(err => {
+        job.status = 'error';
+        job.error  = err.message;
+        console.error(`[Job ${job.id}] Error:`, err.message);
+      });
+
+      json(res, 202, { jobId: job.id });
+    }).catch(err => json(res, 500, { error: err.message }));
+    return;
+  }
+
+  // GET /status/:jobId
+  const statusMatch = req.url?.match(/^\/status\/(\d+)$/);
+  if (req.method === 'GET' && statusMatch) {
+    const job = jobs.get(statusMatch[1]);
+    if (!job) { json(res, 404, { error: 'Job not found' }); return; }
+
+    json(res, 200, {
+      status:   job.status,
+      progress: job.progress,
+      results:  job.results,
+      report:   job.report,
+      error:    job.error,
+      elapsedMs: Date.now() - job.startedAt,
+    });
+    return;
+  }
+
+  // POST /resend — resend a single request with modified headers
+  if (req.method === 'POST' && req.url === '/resend') {
+    readBody(req).then(raw => {
+      let body;
+      try { body = JSON.parse(raw); }
+      catch { json(res, 400, { error: 'Invalid JSON body' }); return; }
+
+      const { url, method = 'GET', headers = {}, body: reqBody } = body;
+      if (!url) { json(res, 400, { error: 'url is required' }); return; }
+
+      const t0 = performance.now();
+      fetch(url, {
+        method,
+        headers,
+        body: reqBody || undefined,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+      })
+      .then(async (resp) => {
+        const respBody = await resp.text().catch(() => '');
+        const durationMs = Math.round(performance.now() - t0);
+
+        json(res, 200, {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: [...resp.headers.entries()].map(([name, value]) => ({ name, value })),
+          body: respBody.slice(0, 5000),  // Limit response body size
+          durationMs,
+        });
+      })
+      .catch(err => {
+        const durationMs = Math.round(performance.now() - t0);
+        json(res, 200, {
+          status: 0,
+          error: err.message,
+          durationMs,
+        });
+      });
+    }).catch(err => json(res, 500, { error: err.message }));
+    return;
+  }
+
+  res.writeHead(404, CORS);
+  res.end('Not found');
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+createServer(router).listen(PORT, '127.0.0.1', () => {
+  console.log('');
+  console.log('  SAP Fiori Replay Server');
+  console.log('  ─────────────────────────────────────');
+  console.log(`  Listening on  http://localhost:${PORT}`);
+  console.log(`  Health check  http://localhost:${PORT}/health`);
+  console.log('');
+  console.log('  Waiting for replay requests from the Chrome extension…');
+  console.log('  Press Ctrl+C to stop.');
+  console.log('');
+});

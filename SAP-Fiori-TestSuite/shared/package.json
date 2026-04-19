@@ -1,0 +1,10 @@
+{
+  "name": "sap-fiori-test-suite-shared",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared correlation engine and HAR utilities for SAP Fiori performance testing",
+  "exports": {
+    "./correlation": "./correlation.js",
+    "./har-utils": "./har-utils.js"
+  }
+}

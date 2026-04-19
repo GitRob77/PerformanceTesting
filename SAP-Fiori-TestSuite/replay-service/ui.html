@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SAP Fiori Replay — Results</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0; padding: 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { margin: 0 0 20px 0; font-size: 24px; }
+    .status-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 4px;
+      font-size: 12px; font-weight: 600; margin: 10px 0;
+    }
+    .status-badge.running { background: #cfe9ff; color: #0055b8; }
+    .status-badge.done { background: #d3f3d3; color: #0b6623; }
+    .status-badge.error { background: #fdd2cc; color: #ae2a19; }
+
+    .progress-bar {
+      width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px;
+      overflow: hidden; margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%; background: #0055b8; width: 0%;
+      transition: width 0.3s;
+    }
+
+    table {
+      width: 100%; border-collapse: collapse;
+      background: white; margin: 20px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    th {
+      background: #f9f9f9; padding: 12px; text-align: left;
+      border-bottom: 2px solid #e0e0e0; font-weight: 600; font-size: 13px;
+    }
+    td {
+      padding: 12px; border-bottom: 1px solid #e0e0e0; font-size: 13px;
+    }
+    tr:hover { background: #fafafa; }
+
+    .status-200, .status-201, .status-204, .status-301, .status-302 { color: #0b6623; font-weight: 600; }
+    .status-400, .status-401, .status-403, .status-404, .status-500 { color: #ae2a19; font-weight: 600; }
+
+    .excluded-row { opacity: 0.55; }
+    .excluded-badge {
+      display: inline-block; padding: 2px 6px; border-radius: 3px;
+      font-size: 10px; font-weight: 600; background: #e8e8e8; color: #666;
+      margin-left: 6px; vertical-align: middle;
+    }
+    .excluded-note {
+      margin: 10px 0; padding: 10px 14px; background: #fffbe6;
+      border-left: 4px solid #f5a623; border-radius: 3px; font-size: 12px;
+      color: #7a5900;
+    }
+
+    .btn {
+      padding: 6px 12px; border: none; border-radius: 4px;
+      font-size: 12px; cursor: pointer; font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #0055b8; color: white; }
+    .btn-primary:hover { background: #003d82; }
+    .btn-secondary { background: #e0e0e0; color: #333; }
+    .btn-secondary:hover { background: #d0d0d0; }
+    .btn-danger { background: #fdd2cc; color: #ae2a19; }
+    .btn-danger:hover { background: #f5a8a0; }
+
+    .modal {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 1000;
+      justify-content: center; align-items: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+      background: white; border-radius: 8px; max-width: 800px; width: 90%;
+      max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      padding: 20px; border-bottom: 1px solid #e0e0e0;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-header h2 { margin: 0; font-size: 18px; }
+    .modal-body { padding: 20px; }
+    .modal-footer {
+      padding: 20px; border-top: 1px solid #e0e0e0;
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    .close-btn {
+      background: none; border: none; font-size: 24px;
+      cursor: pointer; color: #999;
+    }
+
+    .header-editor {
+      display: grid; grid-template-columns: 1fr 2fr; gap: 10px;
+      margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 4px;
+    }
+    .header-editor input {
+      padding: 6px; border: 1px solid #d0d0d0; border-radius: 3px;
+      font-family: monospace; font-size: 12px;
+    }
+    .response-panel {
+      margin: 20px 0; padding: 15px; background: #f9f9f9;
+      border-left: 4px solid #e0e0e0; border-radius: 3px;
+    }
+    .response-panel.success { border-left-color: #0b6623; }
+    .response-panel.error { border-left-color: #ae2a19; }
+    pre {
+      background: white; padding: 10px; border-radius: 3px;
+      overflow-x: auto; font-size: 11px; margin: 10px 0;
+    }
+    .empty {
+      padding: 40px; text-align: center; color: #999;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>SAP Fiori Replay Results</h1>
+
+  <div id="loadingSpinner" style="text-align: center; padding: 20px;">
+    <p>Loading replay results...</p>
+  </div>
+
+  <div id="resultsPanel" style="display: none;">
+    <div>
+      <span class="status-badge running" id="statusBadge">Running</span>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <p id="progressLabel">0 / 0 requests</p>
+    </div>
+
+    <table id="resultsTable">
+      <thead>
+        <tr>
+          <th>Block</th>
+          <th>Method</th>
+          <th>URL</th>
+          <th>Status</th>
+          <th>Time (ms)</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody">
+      </tbody>
+    </table>
+  </div>
+
+  <div id="emptyPanel" class="empty">
+    <p>No job selected. Load a HAR file and run replay to see results.</p>
+  </div>
+</div>
+
+<!-- Resend Modal -->
+<div class="modal" id="resendModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Resend Request</h2>
+      <button class="close-btn" onclick="closeResendModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom: 20px;">
+        <strong id="resendUrl"></strong>
+        <p id="resendMethod" style="margin: 5px 0; color: #666; font-size: 12px;"></p>
+      </div>
+
+      <h3>Edit Headers</h3>
+      <div id="headersEditor"></div>
+
+      <button class="btn btn-secondary" onclick="addHeaderField()">+ Add Header</button>
+
+      <div class="response-panel" id="responsePanel" style="display: none;">
+        <strong>Response:</strong>
+        <p><span class="status-200" id="responseStatus"></span> <span id="responseDuration"></span></p>
+        <pre id="responseBody"></pre>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeResendModal()">Close</button>
+      <button class="btn btn-primary" onclick="sendResendRequest()">Send Request</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentJob = null;
+  let resendRequest = null;
+  let refreshInterval = null;
+
+  // Parse job ID from URL
+  const jobId = new URLSearchParams(window.location.search).get('job');
+
+  async function loadResults() {
+    if (!jobId) {
+      document.getElementById('loadingSpinner').style.display = 'none';
+      document.getElementById('emptyPanel').style.display = 'block';
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/status/${jobId}`);
+      const data = await resp.json();
+
+      currentJob = data;
+      document.getElementById('loadingSpinner').style.display = 'none';
+      document.getElementById('resultsPanel').style.display = 'block';
+
+      updateUI(data);
+
+      if (data.status === 'running') {
+        refreshInterval = setTimeout(loadResults, 500);
+      } else {
+        clearTimeout(refreshInterval);
+      }
+    } catch (err) {
+      document.getElementById('loadingSpinner').innerHTML = `<p style="color: red;">Error: ${err.message}</p>`;
+    }
+  }
+
+  function updateUI(data) {
+    // Status badge
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = data.status.toUpperCase();
+    badge.className = `status-badge ${data.status}`;
+
+    // Progress
+    const progress = data.progress;
+    const percent = progress.total > 0 ? (progress.completed / progress.total * 100) : 0;
+    document.getElementById('progressFill').style.width = percent + '%';
+    document.getElementById('progressLabel').textContent =
+      `${progress.completed} / ${progress.total} requests`;
+
+    // Results table
+    const tbody = document.getElementById('resultsBody');
+    tbody.innerHTML = '';
+
+    for (const result of (data.results || [])) {
+      const row = document.createElement('tr');
+      const isExcluded  = !!result.excludedFromSla;
+      const statusClass = result.status >= 200 && result.status < 400 ? 'status-200' : 'status-400';
+
+      if (isExcluded) row.classList.add('excluded-row');
+
+      const excludedBadge = isExcluded
+        ? '<span class="excluded-badge" title="Not counted against SLA — optional service">Excluded</span>'
+        : '';
+
+      row.innerHTML = `
+        <td>${result.block}${excludedBadge}</td>
+        <td>${result.method}</td>
+        <td style="font-family: monospace; font-size: 11px; max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+          ${result.url}
+        </td>
+        <td class="${isExcluded ? '' : statusClass}">${result.status || 'ERR'}</td>
+        <td>${result.durationMs}</td>
+        <td>
+          <button class="btn btn-secondary" onclick="openResendModal(${JSON.stringify(result).replace(/"/g, '&quot;')})">
+            Resend
+          </button>
+        </td>
+      `;
+      tbody.appendChild(row);
+    }
+
+    // Show excluded-from-SLA note when applicable
+    const existingNote = document.getElementById('excludedNote');
+    if (existingNote) existingNote.remove();
+
+    const excluded = (data.results || []).filter(r => r.excludedFromSla);
+    if (excluded.length > 0) {
+      const note = document.createElement('p');
+      note.id = 'excludedNote';
+      note.className = 'excluded-note';
+      const failures = excluded.filter(r => !r.success).length;
+      note.innerHTML =
+        `<strong>ℹ ${excluded.length} request(s) excluded from SLA</strong> — ` +
+        `${failures} failure(s) among them are expected and do not count against SLA. ` +
+        `These are optional SAP services (e.g. ESH_SEARCH_SRV, SRF_REPORT_DEFINITION) ` +
+        `that are not mandatory for core business scenarios. The same behaviour is ` +
+        `observed with NeoLoad and LoadRunner.`;
+      tbody.parentElement.parentElement.insertAdjacentElement('afterend', note);
+    }
+  }
+
+  function openResendModal(result) {
+    resendRequest = result;
+    document.getElementById('resendUrl').textContent = result.url;
+    document.getElementById('resendMethod').textContent = result.method;
+
+    // Populate headers
+    const headersEditor = document.getElementById('headersEditor');
+    headersEditor.innerHTML = '';
+
+    for (const header of (result._detail?.requestHeaders || [])) {
+      addHeaderField(header.name, header.value);
+    }
+
+    document.getElementById('responsePanel').style.display = 'none';
+    document.getElementById('resendModal').classList.add('show');
+  }
+
+  function closeResendModal() {
+    document.getElementById('resendModal').classList.remove('show');
+  }
+
+  function addHeaderField(name = '', value = '') {
+    const editor = document.getElementById('headersEditor');
+    const div = document.createElement('div');
+    div.className = 'header-editor';
+    div.innerHTML = `
+      <input type="text" placeholder="Header Name" value="${name}" class="header-name">
+      <input type="text" placeholder="Header Value" value="${value}" class="header-value">
+    `;
+    editor.appendChild(div);
+  }
+
+  async function sendResendRequest() {
+    const headersEditors = document.querySelectorAll('.header-editor');
+    const headers = {};
+
+    for (const editor of headersEditors) {
+      const name = editor.querySelector('.header-name').value.trim();
+      const value = editor.querySelector('.header-value').value.trim();
+      if (name) headers[name] = value;
+    }
+
+    try {
+      const resp = await fetch('/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: resendRequest.url,
+          method: resendRequest.method,
+          headers,
+          body: resendRequest._detail?.requestBody
+        })
+      });
+
+      const result = await resp.json();
+      displayResponse(result);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  function displayResponse(result) {
+    const panel = document.getElementById('responsePanel');
+    document.getElementById('responseStatus').textContent = result.status || 'Network Error';
+    document.getElementById('responseDuration').textContent = `${result.durationMs}ms`;
+    document.getElementById('responseBody').textContent = result.body || result.error || '';
+    panel.classList.toggle('success', result.status >= 200 && result.status < 400);
+    panel.classList.toggle('error', result.status >= 400 || result.status === 0);
+    panel.style.display = 'block';
+  }
+
+  // Load on page load
+  loadResults();
+
+  // Close modal on escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeResendModal();
+  });
+</script>
+</body>
+</html>

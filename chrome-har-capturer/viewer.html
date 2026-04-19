@@ -1,0 +1,1603 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>HAR Traffic Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      background: #f5f6fa;
+      color: #111827;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top Bar ── */
+    .topbar {
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      border-top: 3px solid #fa4616;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 15px; color: #111827; font-weight: 600; white-space: nowrap; }
+    .uip-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .uip-brand-text {
+      font-size: 17px;
+      font-weight: 800;
+      white-space: nowrap;
+      letter-spacing: -0.3px;
+    }
+    .uip-brand-ui   { color: #fa4616; }
+    .uip-brand-path { color: #111827; }
+    .uip-divider {
+      color: #d1d5db;
+      font-weight: 300;
+      font-size: 18px;
+      margin: 0 2px;
+    }
+    .uip-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b7280;
+      white-space: nowrap;
+    }
+    .topbar input {
+      flex: 1;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 6px 10px;
+      color: #111827;
+      font-size: 13px;
+      outline: none;
+    }
+    .topbar input:focus { border-color: #2563eb; }
+    .topbar select {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 6px 8px;
+      color: #111827;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+    .btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .btn-refresh { background: #2563eb; color: white; }
+    .btn-refresh:hover { background: #1d4ed8; }
+    .btn-curl-all { background: #fa4616; color: white; }
+    .btn-curl-all:hover { background: #e63f14; }
+    .btn-xaml { background: #fa4616; color: white; }
+    .btn-xaml:hover { background: #e63f14; }
+    .btn-xaml-only { background: #fa4616; color: white; }
+    .btn-xaml-only:hover { background: #e63f14; }
+    #xamlLang {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 5px 8px; color: #111827; font-size: 12px; cursor: pointer; outline: none;
+    }
+    .btn-curl-copy { background: #fa4616; color: white; font-size: 11px; padding: 4px 10px; }
+    .btn-curl-copy:hover { background: #e63f14; }
+    .btn-curl-copy.copied { background: #16a34a; }
+    .btn-clear { background: #ffffff; border: 1px solid #e5e7eb; color: #374151; }
+    .btn-clear:hover { background: #f9fafb; }
+    .count-badge {
+      background: #fa4616;
+      color: white;
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* ── Main Layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Request List ── */
+    .request-list {
+      width: 380px;
+      min-width: 150px;
+      max-width: 70%;
+      border-right: none;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .list-header {
+      display: grid;
+      grid-template-columns: 60px 1fr 60px 55px;
+      padding: 6px 10px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .list-body {
+      overflow-y: auto;
+      flex: 1;
+    }
+    .request-item {
+      display: grid;
+      grid-template-columns: 60px 1fr 60px 55px;
+      padding: 7px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f4ff;
+      border-left: 3px solid transparent;
+      align-items: center;
+      transition: background 0.1s;
+    }
+    .request-item:hover { background: #f0f4ff; }
+    .request-item.selected { background: #e0eaff; border-left-color: #fa4616; }
+    .method-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 3px;
+      text-align: center;
+      width: 46px;
+    }
+    .method-GET    { background: #dcfce7; color: #15803d; }
+    .method-POST   { background: #ffedd5; color: #c2410c; }
+    .method-PUT    { background: #dbeafe; color: #1d4ed8; }
+    .method-DELETE { background: #fee2e2; color: #b91c1c; }
+    .method-PATCH  { background: #f3e8ff; color: #7e22ce; }
+    .method-OTHER  { background: #f3f4f6; color: #4b5563; }
+
+    .url-cell {
+      font-size: 12px;
+      color: #374151;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 8px;
+    }
+    .url-path { color: #2563eb; }
+    .url-domain { color: #9ca3af; font-size: 11px; }
+
+    .status-cell {
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      padding: 2px 10px;
+      border-radius: 12px;
+      display: inline-block;
+    }
+    .status-2xx { background: #dcfce7; color: #15803d; }
+    .status-3xx { background: #fef9c3; color: #a16207; }
+    .status-4xx { background: #fee2e2; color: #b91c1c; }
+    .status-5xx { background: #fee2e2; color: #b91c1c; }
+    .status-pending { background: #f3f4f6; color: #6b7280; }
+
+    .time-cell {
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: right;
+    }
+
+    /* ── Detail Panel ── */
+    .detail-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .detail-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      font-size: 14px;
+    }
+    .detail-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* URL bar at top of detail */
+    .detail-url-bar {
+      padding: 8px 14px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .detail-url-bar .url-text {
+      color: #2563eb;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    /* Split: request / response */
+    .split-panels {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid #e5e7eb;
+    }
+    .panel:last-child { border-right: none; }
+    .panel-title {
+      padding: 6px 12px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+      font-weight: 700;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s;
+    }
+    .tab:hover { color: #374151; }
+    .tab.active { color: #fa4616; border-bottom-color: #fa4616; }
+
+    /* Tab content */
+    .tab-content { display: none; flex: 1; overflow: auto; }
+    .tab-content.active { display: block; }
+
+    /* Headers table */
+    .headers-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .headers-table tr:nth-child(even) { background: #f9fafb; }
+    .headers-table td {
+      padding: 4px 10px;
+      vertical-align: top;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .header-name { color: #1d4ed8; width: 38%; word-break: break-all; }
+    .header-value { color: #374151; word-break: break-all; }
+
+    /* Body viewer */
+    .body-viewer {
+      padding: 10px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 12px;
+      color: #111827;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+    .body-json { color: #2563eb; }
+    .empty-body { color: #9ca3af; font-style: italic; padding: 10px; font-family: inherit; font-size: 12px; }
+
+    /* Empty state */
+    .no-requests {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: #9ca3af;
+      gap: 8px;
+    }
+    .no-requests .icon { font-size: 32px; }
+    .no-requests p { font-size: 13px; }
+
+    /* ── Functional name bar ── */
+    .name-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px;
+      background: #fff7f5;
+      border-bottom: 2px solid #fa461633;
+      flex-shrink: 0;
+    }
+    .name-label {
+      font-size: 11px; color: #fa4616; white-space: nowrap;
+      font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .name-input {
+      flex: 1; background: #ffffff; border: 1px solid #fa461633;
+      border-radius: 4px; color: #fa4616; font-size: 13px; font-weight: 600;
+      outline: none; padding: 4px 10px; font-family: inherit;
+    }
+    .name-input:focus { border-color: #fa4616; background: #ffffff; }
+    .name-input::placeholder { color: #9ca3af; font-weight: 400; font-style: italic; }
+
+    /* Name badge in the request list */
+    .request-name-badge {
+      font-size: 10px; font-weight: 700; color: #fa4616;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+
+    /* ── Detail view switcher ── */
+    .detail-view-tabs {
+      display: flex;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+    .detail-view-tab {
+      padding: 7px 18px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .detail-view-tab:hover { color: #374151; }
+    .detail-view-tab.active { color: #fa4616; border-bottom-color: #fa4616; }
+
+    /* ── Test Client ── */
+    .test-client {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+    .tc-request-bar {
+      display: flex;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+      align-items: center;
+    }
+    .tc-method-select {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 6px 8px; color: #fa4616; font-size: 13px; font-weight: 700;
+      cursor: pointer; outline: none; width: 90px;
+    }
+    .tc-url-input {
+      flex: 1; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 6px 10px; color: #111827; font-size: 13px; outline: none; font-family: monospace;
+    }
+    .tc-url-input:focus { border-color: #2563eb; }
+    .btn-send { background: #fa4616; color: white; font-size: 13px; font-weight: 700;
+      padding: 6px 18px; border-radius: 4px; border: none; cursor: pointer; white-space: nowrap; }
+    .btn-send:hover { background: #e63f14; }
+    .btn-send:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+    .btn-promote { background: #2563eb; color: white; font-size: 12px; font-weight: 600;
+      padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; white-space: nowrap; }
+    .btn-promote:hover { background: #1d4ed8; }
+    .btn-promote.active { background: #1d4ed8; border: 1px solid #16a34a; }
+    .tc-body { display: flex; flex: 1; overflow: hidden; }
+    .tc-section {
+      flex: 1; display: flex; flex-direction: column;
+      border-right: 1px solid #e5e7eb; overflow: hidden; min-width: 0;
+    }
+    .tc-section:last-child { border-right: none; }
+    .tc-section-title {
+      padding: 5px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase;
+      letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .tc-headers-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+    .tc-header-row {
+      display: flex; gap: 4px; padding: 3px 8px; align-items: center;
+    }
+    .tc-header-row input {
+      flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 3px;
+      padding: 4px 7px; color: #111827; font-size: 12px; outline: none; font-family: monospace;
+    }
+    .tc-header-row input:focus { border-color: #2563eb; }
+    .tc-header-row input.header-name { color: #1d4ed8; }
+    .tc-header-row input.header-value { color: #374151; }
+    .tc-del-btn {
+      background: none; border: none; color: #9ca3af; cursor: pointer;
+      font-size: 14px; padding: 0 4px; line-height: 1;
+    }
+    .tc-del-btn:hover { color: #dc2626; }
+    .tc-add-btn {
+      margin: 6px 8px; padding: 4px 10px; background: #f9fafb; border: 1px dashed #e5e7eb;
+      border-radius: 3px; color: #6b7280; cursor: pointer; font-size: 12px; text-align: center;
+    }
+    .tc-add-btn:hover { color: #374151; border-color: #9ca3af; }
+    .tc-body-textarea {
+      flex: 1; background: #ffffff; border: none; color: #111827;
+      font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px;
+      padding: 10px; resize: none; outline: none; line-height: 1.6;
+    }
+    /* Live response */
+    .tc-response-bar {
+      padding: 7px 12px; background: #f0fdf4; border-bottom: 1px solid #e5e7eb;
+      display: flex; gap: 12px; align-items: center; flex-shrink: 0; font-size: 12px;
+    }
+    .tc-response-bar.error-bar { background: #fef2f2; }
+    .tc-res-status { font-weight: 700; color: #111827; }
+    .tc-res-time { color: #6b7280; }
+    .tc-res-size { color: #6b7280; }
+    .tc-response-body {
+      flex: 1; overflow: auto; padding: 10px;
+      font-family: 'Cascadia Code','Consolas',monospace; font-size: 12px;
+      color: #111827; white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+    }
+    .tc-sending { color: #6b7280; font-style: italic; padding: 20px; text-align: center; }
+
+    /* ── URL picker dropdown ── */
+    .btn-url-picker {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      color: #6b7280; font-size: 13px; padding: 6px 10px; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0; line-height: 1;
+    }
+    .btn-url-picker:hover { background: #ffffff; color: #374151; }
+    .url-picker-dropdown {
+      position: fixed; z-index: 9999;
+      background: #ffffff; border: 1px solid #2563eb55;
+      border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      min-width: 480px; max-width: 700px; max-height: 340px;
+      overflow-y: auto; display: none; flex-direction: column;
+    }
+    .url-picker-dropdown.open { display: flex; }
+    .url-picker-header {
+      padding: 7px 12px; font-size: 11px; font-weight: 700;
+      color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+      background: #f9fafb; border-radius: 6px 6px 0 0;
+    }
+    .url-picker-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; cursor: pointer; border-bottom: 1px solid #f0f4ff;
+      transition: background 0.1s;
+    }
+    .url-picker-item:last-child { border-bottom: none; }
+    .url-picker-item:hover { background: #f0f4ff; }
+    .url-picker-url {
+      flex: 1; font-size: 12px; color: #2563eb;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: monospace;
+    }
+    .url-picker-name {
+      font-size: 11px; color: #fa4616; font-weight: 600;
+      white-space: nowrap; max-width: 140px;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .url-picker-empty {
+      padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;
+    }
+
+    /* ── Resize handles ── */
+    .resize-handle {
+      width: 5px;
+      background: transparent;
+      cursor: col-resize;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 10;
+      transition: background 0.15s;
+    }
+    .resize-handle:hover, .resize-handle.dragging { background: #fa461633; }
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 2px;
+      width: 1px;
+      background: #e5e7eb;
+    }
+    .resize-handle:hover::after, .resize-handle.dragging::after { background: #fa4616; }
+
+    /* ── Variables / Token panel ── */
+    .btn-variables { background: #2563eb; color: white; }
+    .btn-variables:hover { background: #1d4ed8; }
+    .btn-variables.has-vars { background: #2563eb; border: 1px solid #16a34a; }
+
+    .vars-overlay {
+      position: fixed; inset: 0; background: #00000066; z-index: 10001;
+      display: none; align-items: center; justify-content: center;
+    }
+    .vars-overlay.open { display: flex; }
+    .vars-panel {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); width: 720px; max-width: 96vw;
+      max-height: 84vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .vars-header {
+      padding: 12px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .vars-header h2 { font-size: 14px; font-weight: 700; color: #111827; flex: 1; margin: 0; }
+    .vars-scan-btn { background: #2563eb; color: white; }
+    .vars-scan-btn:hover { background: #1d4ed8; }
+    .vars-body { flex: 1; overflow-y: auto; padding: 0; }
+    .vars-empty { padding: 30px; text-align: center; color: #6b7280; font-size: 13px; }
+    .var-row {
+      display: grid;
+      grid-template-columns: 28px 130px 1fr 160px;
+      gap: 0; align-items: stretch;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .var-row:hover { background: #f9fafb; }
+    .var-check-cell {
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 4px; cursor: pointer;
+    }
+    .var-check-cell input[type=checkbox] { cursor: pointer; accent-color: #2563eb; width: 14px; height: 14px; }
+    .var-info-cell { padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+    .var-header-name {
+      font-size: 11px; font-weight: 700; color: #1d4ed8; text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .var-token-type {
+      font-size: 10px; color: #16a34a; font-weight: 600;
+    }
+    .var-count { font-size: 10px; color: #6b7280; }
+    .var-original-cell {
+      padding: 8px 10px; display: flex; flex-direction: column; gap: 3px;
+      border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;
+    }
+    .var-original-label { font-size: 10px; color: #6b7280; }
+    .var-original-val {
+      font-size: 11px; color: #374151; font-family: monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 320px;
+    }
+    .var-override-cell { padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; }
+    .var-name-row { display: flex; align-items: center; gap: 6px; }
+    .var-name-prefix { font-size: 11px; color: #6b7280; white-space: nowrap; }
+    .var-name-input {
+      flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 3px;
+      color: #fa4616; font-size: 11px; padding: 3px 6px; outline: none; font-family: monospace;
+      min-width: 0;
+    }
+    .var-name-input:focus { border-color: #fa4616; }
+    .var-value-input {
+      width: 100%; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 3px;
+      color: #16a34a; font-size: 11px; padding: 3px 6px; outline: none;
+      font-family: monospace; box-sizing: border-box;
+    }
+    .var-value-input:focus { border-color: #16a34a; }
+    .var-value-input::placeholder { color: #d1d5db; }
+    .vars-footer {
+      padding: 10px 16px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 8px; justify-content: space-between; align-items: center;
+      flex-shrink: 0;
+    }
+    .vars-footer-hint { font-size: 11px; color: #6b7280; }
+    .var-badge {
+      display: inline-block; background: #dbeafe; color: #1d4ed8;
+      border: 1px solid #bfdbfe; border-radius: 10px;
+      padding: 1px 7px; font-size: 10px; font-weight: 700; margin-left: 4px;
+    }
+
+    /* ── Chain Variables ── */
+    .chain-var-token {
+      display: inline; background: #fef3c7; color: #92400e;
+      border: 1px solid #fcd34d; border-radius: 3px;
+      padding: 0 4px; font-family: monospace; font-size: 11px; font-weight: 700;
+    }
+    .chain-var-orig {
+      font-size: 10px; color: #6b7280; font-style: italic;
+    }
+    /* + / ⛓ button on header rows */
+    .header-chain-cell {
+      width: 28px; text-align: center; padding: 0; vertical-align: middle;
+    }
+    .chain-rule-btn {
+      background: none; border: 1px solid #e5e7eb; border-radius: 3px;
+      cursor: pointer; font-size: 11px; color: #6b7280; padding: 1px 5px;
+      line-height: 1; transition: all 0.15s;
+    }
+    .chain-rule-btn:hover { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+    .chain-rule-btn.active { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+    /* Inline dialog */
+    .chain-rule-dialog {
+      position: fixed; z-index: 20000;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.16);
+      padding: 16px; min-width: 280px; max-width: 340px;
+    }
+    .crd-title { font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 10px; }
+    .crd-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+    .crd-header-name { font-size: 12px; margin-bottom: 8px; }
+    .crd-input-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+    .crd-braces { font-family: monospace; font-size: 14px; color: #92400e; font-weight: 700; }
+    .crd-var-input {
+      flex: 1; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 3px;
+      color: #92400e; font-size: 13px; padding: 4px 8px; outline: none;
+      font-family: monospace; font-weight: 700;
+    }
+    .crd-var-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 2px #fef3c780; }
+    .crd-hint { font-size: 10px; color: #9ca3af; margin-bottom: 10px; }
+    .crd-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .crd-btn-save { background: #16a34a; color: white; font-size: 11px; padding: 4px 10px; }
+    .crd-btn-clear { background: #dc2626; color: white; font-size: 11px; padding: 4px 10px; }
+    /* Chain badge on Variables button */
+    .chain-badge {
+      display: inline-block; font-size: 12px; margin-left: 3px; vertical-align: middle;
+    }
+    /* Vars overlay tab bar */
+    .vars-tab-bar {
+      display: flex; gap: 0; border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb; flex-shrink: 0; padding: 0 12px;
+    }
+    .vars-tab {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      padding: 8px 14px; font-size: 12px; font-weight: 600; color: #6b7280;
+      cursor: pointer; transition: all 0.15s; margin-bottom: -1px;
+    }
+    .vars-tab:hover { color: #374151; }
+    .vars-tab.active { color: #fa4616; border-bottom-color: #fa4616; }
+    .vars-tab-content { display: none; flex: 1; overflow: hidden; min-height: 0; flex-direction: column; }
+    .vars-tab-content.active { display: flex; }
+    /* Chain Rules list */
+    .chain-rules-empty { padding: 30px; text-align: center; color: #6b7280; font-size: 13px; }
+    .chain-rule-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; border-bottom: 1px solid #e5e7eb; gap: 12px;
+    }
+    .chain-rule-row:hover { background: #f9fafb; }
+    .chain-rule-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .chain-rule-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .chain-mode-badge {
+      font-size: 9px; font-weight: 800; border-radius: 3px; padding: 2px 5px;
+      text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0;
+    }
+    .chain-mode-res { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .chain-mode-req { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+    .chain-rule-header { font-size: 11px; color: #374151; }
+    .chain-rule-arrow { font-size: 13px; color: #9ca3af; }
+    .chain-rule-req-name { font-size: 11px; color: #6b7280; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chain-rule-del {
+      background: none; border: 1px solid #e5e7eb; border-radius: 3px;
+      color: #dc2626; font-size: 11px; padding: 2px 7px; cursor: pointer;
+    }
+    .chain-rule-del:hover { background: #fee2e2; }
+    /* Live vars table */
+    .live-vars-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .live-vars-table th {
+      position: sticky; top: 0; background: #f9fafb; padding: 8px 12px;
+      text-align: left; font-size: 10px; font-weight: 700; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb;
+    }
+    .live-vars-table td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+    .live-vars-table tr:hover td { background: #f9fafb; }
+    .live-var-value { font-family: monospace; font-size: 11px; color: #111827; word-break: break-all; }
+    .live-var-unset { font-size: 11px; color: #9ca3af; font-style: italic; }
+    .live-var-source { font-size: 10px; color: #6b7280; }
+
+    /* ── Run All panel ── */
+    .btn-run-all { background: #16a34a; color: white; }
+    .btn-run-all:hover { background: #15803d; }
+    .btn-run-all:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+    .run-all-overlay {
+      position: fixed; inset: 0; background: #00000066; z-index: 10000;
+      display: none; align-items: center; justify-content: center;
+    }
+    .run-all-overlay.open { display: flex; }
+    .run-all-panel {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); width: 680px; max-width: 96vw;
+      max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .run-all-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+    }
+    .run-all-header h2 { font-size: 14px; font-weight: 700; color: #111827; flex: 1; }
+    .run-all-progress-bar-wrap {
+      flex: 1; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;
+    }
+    .run-all-progress-bar { height: 100%; background: #16a34a; width: 0%; transition: width 0.2s; }
+    .run-all-summary {
+      padding: 8px 16px; background: #ffffff; border-bottom: 1px solid #e5e7eb;
+      font-size: 12px; display: flex; gap: 20px; align-items: center; flex-shrink: 0;
+    }
+    .run-stat-pass { color: #16a34a; font-weight: 700; }
+    .run-stat-fail { color: #dc2626; font-weight: 700; }
+    .run-stat-pending { color: #6b7280; }
+    .run-metrics-bar {
+      display: flex; align-items: center; gap: 0;
+      padding: 8px 16px; background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+    }
+    .run-metric {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px; flex: 1;
+    }
+    .run-metric-label {
+      font-size: 9px; font-weight: 700; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.8px;
+    }
+    .run-metric-value {
+      font-size: 15px; font-weight: 700; color: #111827; font-family: monospace;
+    }
+    .run-metric-min  { color: #16a34a; }
+    .run-metric-max  { color: #dc2626; }
+    .run-metric-p95  { color: #d97706; }
+    .run-metric-divider {
+      width: 1px; height: 32px; background: #e5e7eb; flex-shrink: 0; margin: 0 4px;
+    }
+
+    .run-all-list { overflow-y: auto; flex: 1; }
+    .run-item {
+      display: grid; grid-template-columns: 46px 60px 1fr 70px 55px;
+      gap: 8px; align-items: center;
+      padding: 7px 16px; border-bottom: 1px solid #e5e7eb; font-size: 12px;
+    }
+    .run-item:hover { background: #f9fafb; }
+    .run-item-num { color: #6b7280; font-size: 11px; text-align: right; }
+    .run-item-url { color: #2563eb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .run-item-status { text-align: center; font-weight: 700; }
+    .run-item-time { text-align: right; color: #9ca3af; font-size: 11px; }
+    .run-icon-pending { color: #6b7280; }
+    .run-icon-running { color: #d97706; animation: spin 1s linear infinite; display: inline-block; }
+    .run-icon-pass { color: #16a34a; }
+    .run-icon-fail { color: #dc2626; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* VU config bar */
+    .run-config-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 12px 16px; background: #ffffff;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+    }
+    .run-config-bar.hidden { display: none; }
+    .run-vu-config {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .run-vu-label { font-size: 12px; color: #374151; white-space: nowrap; font-weight: 600; }
+    .run-vu-hint  { font-size: 11px; color: #6b7280; white-space: nowrap; }
+    .run-vu-input {
+      width: 64px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      color: #2563eb; font-size: 15px; font-weight: 700; text-align: center;
+      padding: 4px 6px; outline: none;
+    }
+    .run-vu-input:focus { border-color: #2563eb; }
+    .btn-run-start {
+      background: #16a34a; color: white; font-size: 13px; font-weight: 700;
+      padding: 7px 22px; border-radius: 4px; border: none; cursor: pointer; white-space: nowrap;
+    }
+    .btn-run-start:hover { background: #15803d; }
+
+    /* Multi-user row — wider grid */
+    .run-all-list.multi-user .run-item {
+      grid-template-columns: 46px 60px 1fr 100px 65px 80px;
+    }
+    .run-item-passes { font-size: 12px; text-align: center; }
+    .run-item-minmax { font-size: 10px; color: #666; text-align: right; white-space: nowrap; }
+
+    .run-all-footer {
+      padding: 10px 16px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
+    }
+
+    /* ── cURL import ── */
+    .btn-import-curl { background: #fa4616; color: white; }
+    .btn-import-curl:hover { background: #e63f14; }
+    /* ── Swagger import overlay ── */
+    .btn-import-swagger { background: #7c3aed; color: white; }
+    .btn-import-swagger:hover { background: #6d28d9; }
+    .swagger-import-overlay {
+      position: fixed; inset: 0; background: #00000066; z-index: 10003;
+      display: none; align-items: center; justify-content: center;
+    }
+    .swagger-import-overlay.open { display: flex; }
+    .swagger-import-panel {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 780px; max-width: 96vw;
+      max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .swagger-import-header {
+      padding: 12px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .swagger-import-header h2 { font-size: 14px; font-weight: 700; color: #111827; flex: 1; margin: 0; }
+    /* Drop zone */
+    .swagger-dropzone {
+      margin: 20px; border: 2px dashed #c4b5fd; border-radius: 10px;
+      background: #faf5ff; padding: 32px; text-align: center;
+      transition: all 0.2s; cursor: pointer; flex-shrink: 0;
+    }
+    .swagger-dropzone.drag-over { border-color: #7c3aed; background: #ede9fe; }
+    .swagger-drop-icon { font-size: 36px; margin-bottom: 8px; }
+    .swagger-drop-label { font-size: 13px; color: #374151; margin-bottom: 8px; }
+    .swagger-drop-or { font-size: 11px; color: #9ca3af; margin-bottom: 10px; }
+    .swagger-browse-btn { background: #7c3aed; color: white; }
+    .swagger-browse-btn:hover { background: #6d28d9; }
+    /* Info bar */
+    .swagger-info-bar {
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+      padding: 8px 16px; background: #f3f0ff; border-bottom: 1px solid #ddd6fe;
+      font-size: 12px; flex-wrap: wrap;
+    }
+    .swagger-info-title { font-weight: 700; color: #111827; }
+    .swagger-info-version { background: #7c3aed; color: white; border-radius: 10px; padding: 1px 8px; font-size: 10px; font-weight: 700; }
+    .swagger-info-base { font-family: monospace; font-size: 11px; color: #6d28d9; }
+    .swagger-info-count { color: #6b7280; margin-left: auto; }
+    /* Toolbar */
+    .swagger-toolbar {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      border-bottom: 1px solid #e5e7eb; background: #fafafa; flex-shrink: 0;
+    }
+    .swagger-sel-all-label { font-size: 12px; color: #374151; display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+    .swagger-search {
+      flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 4px 8px; font-size: 12px; outline: none;
+    }
+    .swagger-search:focus { border-color: #7c3aed; }
+    #swaggerMethodFilter {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 4px 6px; font-size: 12px; cursor: pointer;
+    }
+    /* Endpoint list */
+    .swagger-endpoint-list {
+      flex: 1; overflow-y: auto; min-height: 0;
+    }
+    .swagger-ep-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 16px; border-bottom: 1px solid #f3f4f6;
+      cursor: pointer;
+    }
+    .swagger-ep-row:hover { background: #faf5ff; }
+    .swagger-ep-row.ep-hidden { display: none; }
+    .swagger-ep-check { accent-color: #7c3aed; width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+    .swagger-ep-left { flex: 1; min-width: 0; }
+    .swagger-ep-path { font-family: monospace; font-size: 12px; color: #111827; font-weight: 600; word-break: break-all; }
+    .swagger-ep-summary { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .swagger-ep-tags { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+    .swagger-ep-tag {
+      font-size: 9px; background: #ede9fe; color: #6d28d9; border-radius: 3px;
+      padding: 1px 5px; font-weight: 600;
+    }
+    .swagger-ep-body-hint { font-size: 10px; color: #16a34a; margin-top: 2px; font-style: italic; }
+    /* Error */
+    .swagger-error {
+      margin: 12px 16px; padding: 10px 14px; background: #fee2e2;
+      border: 1px solid #fca5a5; border-radius: 6px; color: #b91c1c; font-size: 12px;
+    }
+    /* Footer */
+    .swagger-import-footer {
+      padding: 10px 16px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 8px; justify-content: space-between; align-items: center;
+      flex-shrink: 0;
+    }
+    .swagger-footer-hint { font-size: 11px; color: #6b7280; }
+    .btn-swagger-import { background: #7c3aed; color: white; }
+    .btn-swagger-import:hover:not(:disabled) { background: #6d28d9; }
+    .btn-swagger-import:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+    .curl-import-overlay {
+      position: fixed; inset: 0; background: #00000066; z-index: 10002;
+      display: none; align-items: center; justify-content: center;
+    }
+    .curl-import-overlay.open { display: flex; }
+    .curl-import-panel {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); width: 680px; max-width: 96vw;
+      max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .curl-import-header {
+      padding: 12px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .curl-import-header h2 { font-size: 14px; font-weight: 700; color: #111827; flex: 1; margin: 0; }
+    .curl-import-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+    .curl-textarea {
+      width: 100%; min-height: 130px; background: #ffffff; border: 1px solid #e5e7eb;
+      border-radius: 4px; color: #111827; font-family: 'Cascadia Code','Consolas',monospace;
+      font-size: 12px; padding: 10px; resize: vertical; outline: none; line-height: 1.6;
+      box-sizing: border-box;
+    }
+    .curl-textarea:focus { border-color: #2563eb; }
+    .curl-parse-btn {
+      background: #2563eb; color: white; font-size: 12px; font-weight: 600;
+      padding: 6px 14px; border-radius: 4px; border: none; cursor: pointer; align-self: flex-start;
+    }
+    .curl-parse-btn:hover { background: #1d4ed8; }
+    .curl-preview {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 10px 14px; display: none; flex-direction: column; gap: 8px;
+    }
+    .curl-preview.visible { display: flex; }
+    .curl-preview-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+    .curl-preview-label { color: #6b7280; font-weight: 700; width: 80px; flex-shrink: 0; text-transform: uppercase; font-size: 10px; padding-top: 1px; }
+    .curl-preview-value { color: #2563eb; font-family: monospace; word-break: break-all; }
+    .curl-preview-value.body-val { color: #374151; }
+    .curl-preview-error { color: #dc2626; font-size: 13px; padding: 8px 0; }
+    .curl-hdr-list { display: flex; flex-direction: column; gap: 3px; }
+    .curl-hdr-item { display: flex; gap: 6px; }
+    .curl-hdr-name { color: #1d4ed8; }
+    .curl-hdr-val  { color: #374151; }
+    .curl-import-footer {
+      padding: 10px 16px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
+    }
+    .btn-do-import {
+      background: #16a34a; color: white; font-size: 13px; font-weight: 700;
+      padding: 7px 20px; border-radius: 4px; border: none; cursor: pointer;
+    }
+    .btn-do-import:hover { background: #15803d; }
+    .btn-do-import:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+    /* ── List counter bar ── */
+    .list-counter {
+      padding: 4px 10px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #6b7280;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .list-counter #listCountVisible {
+      color: #2563eb;
+      font-weight: 700;
+    }
+    .list-counter.filtered #listCountVisible {
+      color: #d97706;
+    }
+
+    /* ── Selection / delete ── */
+    .list-header,
+    .request-item {
+      grid-template-columns: 28px 60px 1fr 60px 55px;
+    }
+    .select-all-wrap {
+      display: flex; align-items: center; justify-content: center;
+    }
+    .select-all-wrap input,
+    .row-check { cursor: pointer; accent-color: #2563eb; width: 13px; height: 13px; }
+    .delete-bar {
+      display: none; align-items: center; gap: 8px;
+      padding: 5px 10px; background: #fff5f5;
+      border-bottom: 1px solid #fecaca; flex-shrink: 0;
+    }
+    .delete-bar.visible { display: flex; }
+    .delete-bar-info { font-size: 12px; color: #dc2626; font-weight: 600; flex: 1; }
+    .btn-delete-sel {
+      background: #dc2626; color: white; font-size: 12px;
+      padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: 600;
+    }
+    .btn-delete-sel:hover { background: #b91c1c; }
+    .btn-deselect-all {
+      background: #ffffff; border: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;
+      padding: 4px 10px; border-radius: 4px; cursor: pointer;
+    }
+    .btn-deselect-all:hover { color: #374151; border-color: #6b7280; }
+
+    /* ── API-only toggle ── */
+    .btn-api-only {
+      background: #f9fafb; color: #6b7280;
+      border: 1px solid #e5e7eb; border-radius: 4px;
+      padding: 5px 11px; font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .btn-api-only:hover { color: #374151; border-color: #9ca3af; }
+    .btn-api-only.active {
+      background: #dcfce7; color: #15803d;
+      border-color: #16a34a; box-shadow: 0 0 0 1px #16a34a33;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f5f6fa; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+    /* ── Theme toggle button ── */
+    .btn-theme-toggle {
+      background: none; border: 1px solid #e5e7eb; border-radius: 6px;
+      padding: 5px 9px; cursor: pointer; font-size: 15px; line-height: 1;
+      flex-shrink: 0; transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-theme-toggle:hover { background: #f3f4f6; }
+
+    /* ══════════════════════════════════════════
+       DARK THEME  —  body.dark overrides
+       ══════════════════════════════════════════ */
+    body.dark {
+      background: #0d1117;
+      color: #e2e8f0;
+    }
+    /* Top bar */
+    body.dark .topbar { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .uip-brand-path { color: #e2e8f0; }
+    body.dark .uip-divider { color: #3d4a63; }
+    body.dark .uip-title { color: #64748b; }
+    body.dark .topbar input  { background: #1e2535; border-color: #2d3550; color: #e2e8f0; }
+    body.dark .topbar input::placeholder { color: #475569; }
+    body.dark .topbar select { background: #1e2535; border-color: #2d3550; color: #e2e8f0; }
+    body.dark #xamlLang { background: #1e2535; border-color: #2d3550; color: #e2e8f0; }
+    body.dark .btn-clear { background: #1e2535; border-color: #2d3550; color: #94a3b8; }
+    body.dark .btn-clear:hover { background: #263045; }
+    body.dark .btn-theme-toggle { border-color: #2d3550; }
+    body.dark .btn-theme-toggle:hover { background: #1e2535; }
+    body.dark .btn-api-only { background: #1e2535; color: #64748b; border-color: #2d3550; }
+    body.dark .btn-api-only:hover { color: #94a3b8; border-color: #3d4a63; }
+    body.dark .btn-api-only.active { background: #14532d33; color: #4ade80; border-color: #166534; box-shadow: 0 0 0 1px #16653444; }
+    /* Request list */
+    body.dark .list-header { background: #161b27; border-bottom-color: #2d3550; color: #475569; }
+    body.dark .request-item { border-bottom-color: #1e2535; border-left-color: transparent; }
+    body.dark .request-item:hover { background: #1a2540; }
+    body.dark .request-item.selected { background: #1a2f50; border-left-color: #fa4616; }
+    body.dark .request-name-badge { color: #fa7c4f; }
+    body.dark .url-cell { color: #94a3b8; }
+    body.dark .url-path { color: #60a5fa; }
+    body.dark .url-domain { color: #475569; }
+    body.dark .time-cell { color: #475569; }
+    /* Method badges */
+    body.dark .method-GET    { background: #14532d; color: #4ade80; }
+    body.dark .method-POST   { background: #431407; color: #fb923c; }
+    body.dark .method-PUT    { background: #1e3a5f; color: #60a5fa; }
+    body.dark .method-DELETE { background: #450a0a; color: #f87171; }
+    body.dark .method-PATCH  { background: #2e1065; color: #c084fc; }
+    body.dark .method-OTHER  { background: #1e2535; color: #94a3b8; }
+    /* Status badges */
+    body.dark .status-2xx     { background: #14532d; color: #4ade80; }
+    body.dark .status-3xx     { background: #422006; color: #fbbf24; }
+    body.dark .status-4xx,
+    body.dark .status-5xx     { background: #450a0a; color: #f87171; }
+    body.dark .status-pending { background: #1e2535; color: #64748b; }
+    /* List counter & delete bar */
+    body.dark .list-counter { background: #161b27; border-bottom-color: #2d3550; color: #475569; }
+    body.dark .list-counter #listCountVisible { color: #60a5fa; }
+    body.dark .list-counter.filtered #listCountVisible { color: #fbbf24; }
+    body.dark .delete-bar { background: #2d0a0a; border-bottom-color: #7f1d1d; }
+    body.dark .delete-bar-info { color: #f87171; }
+    body.dark .btn-deselect-all { background: #1e2535; border-color: #2d3550; color: #64748b; }
+    body.dark .btn-deselect-all:hover { color: #94a3b8; border-color: #3d4a63; }
+    /* Detail panel */
+    body.dark .detail-url-bar { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .detail-url-bar .url-text { color: #60a5fa; }
+    body.dark .detail-empty { color: #475569; }
+    body.dark .resize-handle::after { background: #2d3550; }
+    body.dark .resize-handle:hover::after,
+    body.dark .resize-handle.dragging::after { background: #fa4616; }
+    body.dark .panel { border-right-color: #2d3550; }
+    body.dark .panel-title { background: #161b27; border-bottom-color: #2d3550; color: #475569; }
+    body.dark .split-panels .panel { }
+    /* Tabs */
+    body.dark .tabs  { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .tab   { color: #475569; }
+    body.dark .tab:hover { color: #94a3b8; }
+    body.dark .tab.active { color: #fa4616; border-bottom-color: #fa4616; }
+    /* Headers table */
+    body.dark .headers-table tr:nth-child(even) { background: #1a2030; }
+    body.dark .headers-table td { border-bottom-color: #2d3550; }
+    body.dark .header-name  { color: #60a5fa; }
+    body.dark .header-value { color: #94a3b8; }
+    /* Body viewer */
+    body.dark .body-viewer { color: #e2e8f0; }
+    body.dark .body-json   { color: #60a5fa; }
+    body.dark .empty-body  { color: #475569; }
+    /* Name bar */
+    body.dark .name-bar { background: #1a1310; border-bottom-color: #fa461633; }
+    body.dark .name-input { background: #1a1310; border-color: #fa461633; color: #fa7c4f; }
+    body.dark .name-input:focus { background: #1a1310; border-color: #fa4616; }
+    body.dark .name-input::placeholder { color: #4a3030; }
+    /* Detail view tabs */
+    body.dark .detail-view-tabs  { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .detail-view-tab   { color: #475569; }
+    body.dark .detail-view-tab:hover { color: #94a3b8; }
+    body.dark .detail-view-tab.active { color: #fa4616; border-bottom-color: #fa4616; }
+    /* Test Client */
+    body.dark .tc-request-bar { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .tc-method-select { background: #1e2535; border-color: #2d3550; color: #fa7c4f; }
+    body.dark .tc-url-input { background: #0d1117; border-color: #2d3550; color: #e2e8f0; }
+    body.dark .tc-url-input:focus { border-color: #60a5fa; }
+    body.dark .tc-section { border-right-color: #2d3550; }
+    body.dark .tc-section-title { background: #161b27; border-bottom-color: #2d3550; color: #475569; }
+    body.dark .tc-header-row input { background: #1e2535; border-color: #2d3550; color: #e2e8f0; }
+    body.dark .tc-header-row input:focus { border-color: #60a5fa; }
+    body.dark .tc-header-row input.header-name  { color: #60a5fa; }
+    body.dark .tc-header-row input.header-value { color: #94a3b8; }
+    body.dark .tc-add-btn { background: #1e2535; border-color: #2d3550; color: #475569; }
+    body.dark .tc-add-btn:hover { color: #94a3b8; border-color: #3d4a63; }
+    body.dark .tc-body-textarea { background: #0d1117; color: #e2e8f0; }
+    body.dark .tc-response-bar { background: #0d1f14; border-bottom-color: #2d3550; }
+    body.dark .tc-response-bar.error-bar { background: #1a0a0a; }
+    body.dark .tc-res-status { color: #e2e8f0; }
+    body.dark .tc-res-time, body.dark .tc-res-size { color: #64748b; }
+    body.dark .tc-response-body { color: #e2e8f0; }
+    body.dark .tc-sending { color: #475569; }
+    /* URL picker */
+    body.dark .btn-url-picker { background: #1e2535; border-color: #2d3550; color: #64748b; }
+    body.dark .btn-url-picker:hover { background: #263045; color: #94a3b8; }
+    body.dark .url-picker-dropdown { background: #161b27; border-color: #3b82f655; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    body.dark .url-picker-header { background: #1e2535; border-bottom-color: #2d3550; color: #475569; }
+    body.dark .url-picker-item  { border-bottom-color: #1e2535; }
+    body.dark .url-picker-item:hover { background: #1a2540; }
+    body.dark .url-picker-url   { color: #60a5fa; }
+    body.dark .url-picker-name  { color: #fa7c4f; }
+    body.dark .url-picker-empty { color: #475569; }
+    /* Variables panel */
+    body.dark .vars-panel  { background: #161b27; border-color: #2d3550; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+    body.dark .vars-header { background: #1e2535; border-bottom-color: #2d3550; }
+    body.dark .vars-header h2 { color: #e2e8f0; }
+    body.dark .vars-empty  { color: #475569; }
+    body.dark .var-row     { border-bottom-color: #2d3550; }
+    body.dark .var-row:hover { background: #1e2535; }
+    body.dark .var-header-name { color: #60a5fa; }
+    body.dark .var-token-type  { color: #4ade80; }
+    body.dark .var-count       { color: #475569; }
+    body.dark .var-original-cell { border-left-color: #2d3550; border-right-color: #2d3550; }
+    body.dark .var-original-label { color: #475569; }
+    body.dark .var-original-val   { color: #94a3b8; }
+    body.dark .var-name-prefix    { color: #475569; }
+    body.dark .var-name-input  { background: #1e2535; border-color: #2d3550; color: #fa7c4f; }
+    body.dark .var-name-input:focus { border-color: #fa4616; }
+    body.dark .var-value-input { background: #1e2535; border-color: #2d3550; color: #4ade80; }
+    body.dark .var-value-input:focus { border-color: #16a34a; }
+    body.dark .var-value-input::placeholder { color: #2d3550; }
+    body.dark .vars-footer { background: #1e2535; border-top-color: #2d3550; }
+    body.dark .vars-footer-hint { color: #475569; }
+    body.dark .var-badge { background: #1e3a5f; color: #60a5fa; border-color: #2d5080; }
+    /* Run All panel */
+    body.dark .run-all-panel  { background: #161b27; border-color: #2d3550; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+    body.dark .run-all-header { background: #1e2535; border-bottom-color: #2d3550; }
+    body.dark .run-all-header h2 { color: #e2e8f0; }
+    body.dark .run-all-progress-bar-wrap { background: #2d3550; }
+    body.dark .run-all-summary { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .run-stat-pending { color: #475569; }
+    body.dark .run-metrics-bar { background: #1e2535; border-bottom-color: #2d3550; }
+    body.dark .run-metric-value { color: #e2e8f0; }
+    body.dark .run-metric-label { color: #475569; }
+    body.dark .run-metric-divider { background: #2d3550; }
+    body.dark .run-item { border-bottom-color: #2d3550; }
+    body.dark .run-item:hover { background: #1e2535; }
+    body.dark .run-item-num  { color: #475569; }
+    body.dark .run-item-url  { color: #60a5fa; }
+    body.dark .run-item-time,
+    body.dark .run-item-minmax { color: #475569; }
+    body.dark .run-icon-pending { color: #475569; }
+    body.dark .run-config-bar  { background: #161b27; border-bottom-color: #2d3550; }
+    body.dark .run-vu-label { color: #94a3b8; }
+    body.dark .run-vu-hint  { color: #475569; }
+    body.dark .run-vu-input { background: #1e2535; border-color: #2d3550; color: #60a5fa; }
+    body.dark .run-vu-input:focus { border-color: #60a5fa; }
+    body.dark .run-all-footer { background: #1e2535; border-top-color: #2d3550; }
+    /* cURL import panel */
+    body.dark .curl-import-panel  { background: #161b27; border-color: #2d3550; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+    body.dark .curl-import-header { background: #1e2535; border-bottom-color: #2d3550; }
+    body.dark .curl-import-header h2 { color: #e2e8f0; }
+    body.dark .curl-textarea  { background: #0d1117; border-color: #2d3550; color: #e2e8f0; }
+    body.dark .curl-textarea:focus { border-color: #60a5fa; }
+    body.dark .curl-preview   { background: #1e2535; border-color: #2d3550; }
+    body.dark .curl-preview-label { color: #475569; }
+    body.dark .curl-preview-value { color: #60a5fa; }
+    body.dark .curl-preview-value.body-val { color: #94a3b8; }
+    body.dark .curl-hdr-name  { color: #60a5fa; }
+    body.dark .curl-hdr-val   { color: #94a3b8; }
+    body.dark .curl-import-footer { background: #1e2535; border-top-color: #2d3550; }
+    /* Dark scrollbars */
+    body.dark ::-webkit-scrollbar-track { background: #0d1117; }
+    body.dark ::-webkit-scrollbar-thumb { background: #2d3550; }
+    body.dark ::-webkit-scrollbar-thumb:hover { background: #3d4a63; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="uip-brand">
+    <!-- UiPath logomark: orange rounded square, white U-shape + i-dot -->
+    <svg width="30" height="30" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="7" fill="#fa4616"/>
+      <!-- Left arm of U -->
+      <rect x="8" y="8" width="6.5" height="19" rx="3.2" fill="white"/>
+      <!-- Right arm of U -->
+      <rect x="25.5" y="8" width="6.5" height="19" rx="3.2" fill="white"/>
+      <!-- Bottom bridge of U -->
+      <rect x="8" y="24" width="24" height="6.5" rx="3.2" fill="white"/>
+      <!-- "i" dot: top-right corner accent -->
+      <circle cx="34" cy="7.5" r="4" fill="white"/>
+    </svg>
+    <span class="uip-brand-text">
+      <span class="uip-brand-ui">Ui</span><span class="uip-brand-path">Path</span>
+    </span>
+    <span class="uip-divider">|</span>
+    <span class="uip-title">Performance Testing</span>
+  </div>
+  <input type="text" id="searchInput" placeholder="Filter by URL...">
+  <select id="methodFilter">
+    <option value="ALL">All Methods</option>
+    <option value="GET">GET</option>
+    <option value="POST">POST</option>
+    <option value="PUT">PUT</option>
+    <option value="DELETE">DELETE</option>
+    <option value="PATCH">PATCH</option>
+  </select>
+  <select id="statusFilter">
+    <option value="ALL">All Status</option>
+    <option value="2xx">2xx Success</option>
+    <option value="3xx">3xx Redirect</option>
+    <option value="4xx">4xx Error</option>
+    <option value="5xx">5xx Error</option>
+  </select>
+  <button class="btn btn-refresh" id="btnRefresh">↻ Refresh</button>
+  <button class="btn btn-import-curl" id="btnImportCurl">📥 Import cURL</button>
+  <button class="btn btn-import-swagger" id="btnImportSwagger">📄 Import Swagger</button>
+  <input type="file" id="swaggerFileInput" accept=".json,.yaml,.yml" style="display:none" />
+  <button class="btn-api-only" id="btnApiOnly" title="Show only API/XHR calls — hides page loads and non-JSON traffic">⚡ API only</button>
+  <button class="btn btn-variables" id="btnVariables">🔑 Variables</button>
+  <button class="btn btn-run-all" id="btnRunAll">▶ Run All</button>
+  <button class="btn btn-curl-all" id="btnExportCurl">⬇ Export cURL</button>
+  <select id="xamlLang" title="UiPath expression language">
+    <option value="CSharp">C# (default)</option>
+    <option value="VisualBasic">VB.NET</option>
+  </select>
+  <button class="btn btn-xaml" id="btnExportXaml">⬇ New Project (.zip)</button>
+  <button class="btn btn-xaml-only" id="btnExportXamlOnly">⬇ XAML only</button>
+  <button class="btn btn-clear" id="btnClear">🗑 Clear</button>
+  <button class="btn-theme-toggle" id="btnThemeToggle" title="Toggle dark / light theme">🌙</button>
+  <span class="count-badge" id="countBadge">0 requests</span>
+</div>
+
+<div class="main">
+  <!-- Left: Request list -->
+  <div class="request-list">
+    <div class="list-header">
+      <span class="select-all-wrap"><input type="checkbox" id="selectAll" title="Select all visible"></span>
+      <span>Method</span>
+      <span style="padding-left:8px">URL</span>
+      <span style="text-align:center">Status</span>
+      <span style="text-align:right">Time</span>
+    </div>
+    <div class="list-counter" id="listCounter">
+      <span id="listCountVisible">0</span> of <span id="listCountTotal">0</span> requests
+    </div>
+    <div class="delete-bar" id="deleteBar">
+      <span class="delete-bar-info" id="deleteBarInfo">0 selected</span>
+      <button class="btn-deselect-all" id="btnDeselectAll">✕ Deselect</button>
+      <button class="btn-delete-sel" id="btnDeleteSelected">🗑 Delete selected</button>
+    </div>
+    <div class="list-body" id="requestList">
+      <div class="no-requests">
+        <div class="icon">📡</div>
+        <p>No requests captured yet.</p>
+        <p>Start capturing in the popup.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main resize handle -->
+  <div class="resize-handle" id="mainResize"></div>
+
+  <!-- Right: Detail panel -->
+  <div class="detail-panel" id="detailPanel">
+    <div class="detail-empty" id="detailEmpty">← Select a request to inspect</div>
+    <div class="detail-content" id="detailContent" style="display:none">
+
+      <!-- Functional name row -->
+      <div class="name-bar">
+        <span class="name-label">✏ Name:</span>
+        <input class="name-input" id="requestNameInput" type="text" placeholder="Add a functional name (e.g. Login, Get Accounts)…" />
+      </div>
+
+      <div class="detail-url-bar">
+        <span id="detailMethod" class="method-badge"></span>
+        <span class="url-text" id="detailUrl"></span>
+        <span id="detailStatus" class="status-cell"></span>
+        <span id="detailTime" class="time-cell" style="padding-left:8px"></span>
+        <button class="btn btn-curl-copy" id="btnCopyCurl">📋 Copy cURL</button>
+        <button class="btn-url-picker" id="btnUrlPickerTop" title="Switch to a different request">☰ Switch</button>
+      </div>
+
+      <!-- View switcher: Captured vs Test Client -->
+      <div class="detail-view-tabs">
+        <div class="detail-view-tab active" data-view="captured">Captured</div>
+        <div class="detail-view-tab" data-view="testclient">🚀 Test Client</div>
+      </div>
+
+      <!-- ── Captured view ── -->
+      <div id="viewCaptured" class="split-panels">
+        <!-- Request panel -->
+        <div class="panel">
+          <div class="panel-title">⬆ Request</div>
+          <div class="tabs">
+            <div class="tab active" data-panel="req" data-tab="req-headers">Headers</div>
+            <div class="tab" data-panel="req" data-tab="req-body">Body</div>
+          </div>
+          <div class="tab-content active" id="req-headers">
+            <table class="headers-table" id="reqHeadersTable"></table>
+          </div>
+          <div class="tab-content" id="req-body">
+            <div id="reqBodyContent"></div>
+          </div>
+        </div>
+        <!-- Response panel -->
+        <div class="panel">
+          <div class="panel-title">⬇ Response</div>
+          <div class="tabs">
+            <div class="tab active" data-panel="res" data-tab="res-headers">Headers</div>
+            <div class="tab" data-panel="res" data-tab="res-body">Body</div>
+          </div>
+          <div class="tab-content active" id="res-headers">
+            <table class="headers-table" id="resHeadersTable"></table>
+          </div>
+          <div class="tab-content" id="res-body">
+            <div id="resBodyContent"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Test Client view ── -->
+      <div id="viewTestClient" class="test-client" style="display:none">
+        <!-- Request bar: method + URL + send -->
+        <div class="tc-request-bar">
+          <select class="tc-method-select" id="tcMethod">
+            <option>GET</option><option>POST</option><option>PUT</option>
+            <option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+          </select>
+          <input class="tc-url-input" id="tcUrl" type="text" placeholder="https://..." />
+          <button class="btn-url-picker" id="btnUrlPicker" title="Pick a captured request">▼ Requests</button>
+          <button class="btn-send" id="tcSend">▶ Send</button>
+          <button class="btn-promote" id="btnPromote" title="Use this request for all export functions (cURL, XAML)">📤 Use for Export</button>
+        </div>
+        <div id="promoteIndicator" style="display:none;padding:4px 12px;background:#1a3a1a;border-bottom:1px solid #27ae60;font-size:11px;color:#4ec94e;flex-shrink:0">
+          ✓ Test Client request active for exports — <span style="cursor:pointer;text-decoration:underline" id="clearPromote">clear</span>
+        </div>
+
+        <!-- Body: headers | request body | response -->
+        <div class="tc-body">
+
+          <!-- Left: editable headers -->
+          <div class="tc-section" style="max-width:300px">
+            <div class="tc-section-title">
+              Headers
+              <span id="tcHeaderCount" style="color:#4a9eff;font-weight:400"></span>
+            </div>
+            <div class="tc-headers-list" id="tcHeadersList"></div>
+            <div class="tc-add-btn" id="tcAddHeader">+ Add Header</div>
+          </div>
+
+          <!-- Resize: headers | body -->
+          <div class="resize-handle" id="tcResize1"></div>
+
+          <!-- Middle: editable body -->
+          <div class="tc-section">
+            <div class="tc-section-title">Request Body</div>
+            <textarea class="tc-body-textarea" id="tcBody" placeholder="Request body (JSON, XML, form data...)"></textarea>
+          </div>
+
+          <!-- Resize: body | response -->
+          <div class="resize-handle" id="tcResize2"></div>
+
+          <!-- Right: live response -->
+          <div class="tc-section" id="tcResponseSection">
+            <div class="tc-section-title">Response</div>
+            <div id="tcResponseContent" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+              <div style="color:#555;font-size:13px;padding:20px;text-align:center">
+                Hit ▶ Send to see the response
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Variables overlay -->
+<div class="vars-overlay" id="varsOverlay">
+  <div class="vars-panel">
+    <div class="vars-header">
+      <h2>🔑 Variables &amp; Chain Rules</h2>
+      <button class="btn vars-scan-btn" id="btnScanTokens">🔍 Scan Requests</button>
+      <button class="btn btn-clear" id="btnVarsClose">✕</button>
+    </div>
+    <!-- Tab bar -->
+    <div class="vars-tab-bar">
+      <button class="vars-tab active" data-vtab="token">🔑 Token Variables</button>
+      <button class="vars-tab" data-vtab="chain">⛓ Chain Rules</button>
+      <button class="vars-tab" data-vtab="live">📊 Live Values</button>
+    </div>
+    <!-- Token Variables tab -->
+    <div class="vars-tab-content active" id="vtab-token">
+      <div class="vars-body" id="varsBody">
+        <div class="vars-empty" id="varsEmpty">
+          Click <strong>🔍 Scan Requests</strong> to detect auth tokens and credentials used across your captured traffic.
+        </div>
+      </div>
+    </div>
+    <!-- Chain Rules tab -->
+    <div class="vars-tab-content" id="vtab-chain">
+      <div class="vars-body" id="chainRulesBody">
+        <div class="chain-rules-empty">No chain rules defined yet.<br><span style="color:#555;font-size:12px">Click the <strong>+</strong> button next to any request or response header in the detail panel to create a rule.</span></div>
+      </div>
+    </div>
+    <!-- Live Values tab -->
+    <div class="vars-tab-content" id="vtab-live">
+      <div class="vars-body" id="liveVarsBody">
+        <div class="chain-rules-empty">No {{VarName}} tokens found.<br><span style="color:#555;font-size:12px">Define chain rules and run your requests to see live extracted values here.</span></div>
+      </div>
+    </div>
+    <div class="vars-footer">
+      <span class="vars-footer-hint" id="varsSummary"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="btnVarsApply" style="background:#27ae60;color:white">✓ Apply &amp; Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Run All overlay -->
+<div class="run-all-overlay" id="runAllOverlay">
+  <div class="run-all-panel">
+    <div class="run-all-header">
+      <h2 id="runAllTitle">▶ Run All Requests</h2>
+      <div class="run-all-progress-bar-wrap" id="runProgressWrap" style="display:none">
+        <div class="run-all-progress-bar" id="runProgressBar"></div>
+      </div>
+      <span id="runProgressText" style="font-size:12px;color:#888;white-space:nowrap;display:none">0 / 0</span>
+    </div>
+    <div class="run-config-bar" id="runConfigBar">
+      <div class="run-vu-config">
+        <label class="run-vu-label" for="runVuCount">👥 Virtual Users</label>
+        <input class="run-vu-input" type="number" id="runVuCount" min="1" max="100" value="1" />
+        <span class="run-vu-hint">parallel executions of the full request sequence</span>
+      </div>
+      <button class="btn btn-run-start" id="btnRunStart">▶ Start Run</button>
+    </div>
+    <div class="run-all-summary" id="runSummary">
+      <span class="run-stat-pending" id="runStatTotal">0 requests</span>
+      <span class="run-stat-pass" id="runStatPass" style="display:none">✓ 0 passed</span>
+      <span class="run-stat-fail" id="runStatFail" style="display:none">✗ 0 failed</span>
+    </div>
+    <div class="run-metrics-bar" id="runMetricsBar" style="display:none">
+      <div class="run-metric">
+        <span class="run-metric-label">AVG</span>
+        <span class="run-metric-value" id="metricAvg">—</span>
+      </div>
+      <div class="run-metric-divider"></div>
+      <div class="run-metric">
+        <span class="run-metric-label">MIN</span>
+        <span class="run-metric-value run-metric-min" id="metricMin">—</span>
+      </div>
+      <div class="run-metric-divider"></div>
+      <div class="run-metric">
+        <span class="run-metric-label">MAX</span>
+        <span class="run-metric-value run-metric-max" id="metricMax">—</span>
+      </div>
+      <div class="run-metric-divider"></div>
+      <div class="run-metric">
+        <span class="run-metric-label">TOTAL</span>
+        <span class="run-metric-value" id="metricTotal">—</span>
+      </div>
+      <div class="run-metric-divider"></div>
+      <div class="run-metric">
+        <span class="run-metric-label">P95</span>
+        <span class="run-metric-value run-metric-p95" id="metricP95">—</span>
+      </div>
+    </div>
+    <div class="run-all-list" id="runAllList"></div>
+    <div class="run-all-footer">
+      <button class="btn" id="btnRunStop" style="background:#c0392b;color:white">■ Stop</button>
+      <button class="btn btn-clear" id="btnRunClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- cURL import modal -->
+<!-- Swagger / OpenAPI import overlay -->
+<div class="swagger-import-overlay" id="swaggerImportOverlay">
+  <div class="swagger-import-panel">
+    <div class="swagger-import-header">
+      <h2>📄 Import Swagger / OpenAPI</h2>
+      <button class="btn btn-clear" id="btnSwaggerClose">✕</button>
+    </div>
+    <!-- Drop zone -->
+    <div class="swagger-dropzone" id="swaggerDropzone">
+      <div class="swagger-drop-icon">📂</div>
+      <div class="swagger-drop-label">Drop a <strong>.json</strong> or <strong>.yaml</strong> OpenAPI / Swagger file here</div>
+      <div class="swagger-drop-or">— or —</div>
+      <button class="btn swagger-browse-btn" id="btnSwaggerBrowse">Browse file…</button>
+    </div>
+    <!-- Info bar (hidden until parsed) -->
+    <div class="swagger-info-bar" id="swaggerInfoBar" style="display:none">
+      <span class="swagger-info-title" id="swaggerInfoTitle"></span>
+      <span class="swagger-info-version" id="swaggerInfoVersion"></span>
+      <span class="swagger-info-base" id="swaggerInfoBase"></span>
+      <span class="swagger-info-count" id="swaggerInfoCount"></span>
+    </div>
+    <!-- Toolbar: select all + filter -->
+    <div class="swagger-toolbar" id="swaggerToolbar" style="display:none">
+      <label class="swagger-sel-all-label">
+        <input type="checkbox" id="swaggerSelectAll" checked /> Select all
+      </label>
+      <input class="swagger-search" id="swaggerSearch" placeholder="Filter endpoints…" />
+      <select id="swaggerMethodFilter">
+        <option value="">All methods</option>
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+        <option value="PUT">PUT</option>
+        <option value="PATCH">PATCH</option>
+        <option value="DELETE">DELETE</option>
+      </select>
+    </div>
+    <!-- Endpoint list -->
+    <div class="swagger-endpoint-list" id="swaggerEndpointList"></div>
+    <!-- Error area -->
+    <div class="swagger-error" id="swaggerError" style="display:none"></div>
+    <!-- Footer -->
+    <div class="swagger-import-footer">
+      <span class="swagger-footer-hint" id="swaggerFooterHint"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-clear" id="btnSwaggerCancel">Cancel</button>
+        <button class="btn btn-swagger-import" id="btnDoSwaggerImport" disabled>＋ Import Selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="curl-import-overlay" id="curlImportOverlay">
+  <div class="curl-import-panel">
+    <div class="curl-import-header">
+      <h2>📥 Import cURL</h2>
+      <button class="btn btn-clear" id="btnCurlImportClose">✕</button>
+    </div>
+    <div class="curl-import-body">
+      <textarea class="curl-textarea" id="curlInput" placeholder="Paste a cURL command here…&#10;&#10;curl -X POST 'https://api.example.com/v1/login' \&#10;  -H 'Content-Type: application/json' \&#10;  --data-raw '{&quot;user&quot;:&quot;test&quot;}'"></textarea>
+      <button class="curl-parse-btn" id="btnParseCurl">🔍 Parse</button>
+      <div class="curl-preview" id="curlPreview">
+        <div class="curl-preview-error" id="curlParseError" style="display:none"></div>
+        <div id="curlPreviewRows"></div>
+      </div>
+    </div>
+    <div class="curl-import-footer">
+      <button class="btn btn-clear" id="btnCurlImportCancel">Cancel</button>
+      <button class="btn btn-do-import" id="btnDoImport" disabled>＋ Add to Requests</button>
+    </div>
+  </div>
+</div>
+
+<!-- URL picker dropdown (portal-positioned, attached to body) -->
+<div class="url-picker-dropdown" id="urlPickerDropdown">
+  <div class="url-picker-header">Select a captured request</div>
+  <div id="urlPickerList"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>
